@@ -51,13 +51,25 @@ export default function Calculator() {
   }
 
   async function copyQuote() {
+    // Customer-facing output — markup is NEVER shown as a line item.
+    // We proportionally roll markup into labor and materials so the
+    // itemized lines sum to the total. This is how every pro quoting tool
+    // (Jobber, Housecall Pro, ServiceTitan) presents a quote: overhead
+    // baked into the rate, never called out.
+    const subtotal = laborCents + materialsCents;
+    const ratio = subtotal > 0 ? totalCents / subtotal : 1;
+    const displayLabor = Math.round(laborCents * ratio);
+    // Materials absorbs any rounding drift so the lines sum exactly to total.
+    const displayMaterials = Math.max(0, totalCents - displayLabor);
+
     const lines = [
       customerName ? `Quote for ${customerName}` : `Quote`,
       scope ? `Scope: ${scope}` : null,
       "",
-      `Labor: ${formatUSD(laborCents)}`,
-      `Materials: ${formatUSD(materialsCents)}`,
-      markupCents > 0 ? `Markup: ${formatUSD(markupCents)}` : null,
+      displayLabor > 0 ? `Labor: ${formatUSD(displayLabor)}` : null,
+      displayMaterials > 0
+        ? `Materials: ${formatUSD(displayMaterials)}`
+        : null,
       `Total: ${formatUSD(totalCents)}`,
     ]
       .filter(Boolean)
@@ -135,7 +147,7 @@ export default function Calculator() {
 
         <div>
           <label className="label" htmlFor="markup">
-            Markup (%) — optional
+            Markup (%) — internal only
           </label>
           <input
             id="markup"
@@ -147,7 +159,11 @@ export default function Calculator() {
             placeholder="e.g. 15"
             value={markupPct}
             onChange={(e) => setMarkupPct(e.target.value)}
+            aria-describedby="markup-help"
           />
+          <p id="markup-help" className="mt-1 text-[11px] text-fog">
+            Never shown to the customer. Rolled silently into the total.
+          </p>
         </div>
 
         <div className="md:col-span-2">
@@ -180,11 +196,17 @@ export default function Calculator() {
       </div>
 
       <div className="mt-8 rounded-lg border border-white/10 bg-ink p-5">
+        <div className="mb-3 text-[11px] uppercase tracking-wider text-fog">
+          Your view (internal)
+        </div>
         <div className="space-y-2 text-sm">
           <Row label="Labor" value={formatUSD(laborCents)} />
           <Row label="Materials" value={formatUSD(materialsCents)} />
           {markupCents > 0 && (
-            <Row label={`Markup (${markupPct}%)`} value={formatUSD(markupCents)} />
+            <Row
+              label={`Markup (${markupPct}%) — hidden from customer`}
+              value={formatUSD(markupCents)}
+            />
           )}
         </div>
         <div className="mt-4 flex items-baseline justify-between border-t border-white/10 pt-4">
@@ -215,8 +237,13 @@ export default function Calculator() {
       </div>
 
       <p className="mt-4 text-xs text-fog">
-        Close out this job later to see quoted vs. actual, profit, and variance.
-        First close-out is free.
+        &ldquo;Copy quote&rdquo; produces a customer-facing version with markup
+        baked silently into the total. Your internal breakdown above stays
+        here.
+      </p>
+      <p className="mt-1 text-xs text-fog">
+        Close out this job later to see quoted vs. actual, profit, and
+        variance. First close-out is free.
       </p>
     </div>
   );
