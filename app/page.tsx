@@ -77,7 +77,7 @@ function HowItWorks() {
       num: "2",
       title: "Close it out",
       body:
-        "Job&rsquo;s done? Punch in actual hours and actual material cost. Add a one-line \u201Cwhat surprised me.\u201D Quotr compares quote to reality and shows profit.",
+        "Job's done? Punch in actual hours and actual material cost. Add a one-line \u201Cwhat surprised me.\u201D Quotr compares quote to reality and shows profit.",
       note: "One credit per close-out. First one on us.",
     },
     {
@@ -99,10 +99,7 @@ function HowItWorks() {
               {s.num}
             </div>
             <h3 className="text-lg font-semibold">{s.title}</h3>
-            <p
-              className="mt-2 text-sm text-fog"
-              dangerouslySetInnerHTML={{ __html: s.body }}
-            />
+            <p className="mt-2 text-sm text-fog">{s.body}</p>
             <p className="mt-3 text-xs uppercase tracking-wider text-moss">
               {s.note}
             </p>
@@ -211,7 +208,8 @@ function FAQ() {
         {faqs.map((f) => (
           <details key={f.q} className="card group">
             <summary className="cursor-pointer list-none font-semibold">
-              <span className="mr-2 text-rust">+</span>
+              <span className="mr-2 text-rust group-open:hidden">+</span>
+              <span className="mr-2 hidden text-rust group-open:inline">−</span>
               {f.q}
             </summary>
             <p className="mt-3 text-sm text-fog">{f.a}</p>

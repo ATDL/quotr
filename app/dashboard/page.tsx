@@ -78,8 +78,10 @@ export default async function DashboardHome() {
         {!hasJobs ? (
           <EmptyState />
         ) : (
-          <div className="overflow-hidden rounded-xl border border-white/10">
-            <table className="w-full text-sm">
+          <>
+            <SummaryBar jobs={jobs!} />
+            <div className="overflow-x-auto rounded-xl border border-white/10">
+            <table className="w-full min-w-[600px] text-sm">
               <thead className="bg-steel text-left text-xs uppercase tracking-wider text-fog">
                 <tr>
                   <th className="px-4 py-3">Job</th>
@@ -130,8 +132,69 @@ export default async function DashboardHome() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </section>
+    </div>
+  );
+}
+
+type Job = {
+  computed_profit_cents: number;
+  computed_profit_pct: number;
+  quoted_total_cents: number;
+  actual_total_cents: number;
+  close_out_id: string;
+  quote_id: string;
+  customer_name: string | null;
+  scope: string | null;
+  computed_variance_pct: number;
+  job_type: string | null;
+  closed_at: string;
+};
+
+function SummaryBar({ jobs }: { jobs: Job[] }) {
+  const totalProfit = jobs.reduce((s, j) => s + j.computed_profit_cents, 0);
+  const margins = jobs
+    .map((j) => j.computed_profit_pct)
+    .filter(Number.isFinite);
+  const avgMargin =
+    margins.length > 0
+      ? margins.reduce((s, m) => s + m, 0) / margins.length
+      : null;
+
+  return (
+    <div className="mb-4 grid grid-cols-3 gap-3">
+      <div className="rounded-lg border border-white/10 bg-steel px-4 py-3">
+        <div className="text-[11px] uppercase tracking-wider text-fog">
+          Jobs closed
+        </div>
+        <div className="mt-1 font-mono text-xl font-bold">{jobs.length}</div>
+      </div>
+      <div className="rounded-lg border border-white/10 bg-steel px-4 py-3">
+        <div className="text-[11px] uppercase tracking-wider text-fog">
+          Total profit
+        </div>
+        <div
+          className={`mt-1 font-mono text-xl font-bold ${
+            totalProfit < 0 ? "text-rust" : "text-moss"
+          }`}
+        >
+          {formatUSD(totalProfit)}
+        </div>
+      </div>
+      <div className="rounded-lg border border-white/10 bg-steel px-4 py-3">
+        <div className="text-[11px] uppercase tracking-wider text-fog">
+          Avg margin
+        </div>
+        <div
+          className={`mt-1 font-mono text-xl font-bold ${
+            avgMargin !== null && avgMargin < 0 ? "text-rust" : "text-moss"
+          }`}
+        >
+          {avgMargin !== null ? formatPct(avgMargin) : "—"}
+        </div>
+      </div>
     </div>
   );
 }

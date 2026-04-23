@@ -27,12 +27,13 @@ export default function LoginPage() {
   const emailInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
-  // Pre-fill the last email used + focus the right input on mount.
+  // Pre-fill the last email used + auto-switch to sign-in for returning users.
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(LAST_EMAIL_KEY);
       if (saved) {
         setEmail(saved);
+        setMode("sign-in");
         setTimeout(() => passwordInputRef.current?.focus(), 0);
         return;
       }
@@ -208,7 +209,7 @@ function friendlyError(message: string, mode: Mode): string {
     return "Password needs to be at least 6 characters.";
   }
   if (m.includes("email not confirmed")) {
-    return "This email was created with confirmation on. Disable 'Confirm email' in Supabase Auth settings and try again.";
+    return "Check your inbox — you need to confirm your email before signing in.";
   }
   return mode === "sign-up"
     ? `Couldn't create account: ${message}`

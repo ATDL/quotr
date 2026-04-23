@@ -200,12 +200,12 @@ export default function Calculator() {
           Your view (internal)
         </div>
         <div className="space-y-2 text-sm">
-          <Row label="Labor" value={formatUSD(laborCents)} />
-          <Row label="Materials" value={formatUSD(materialsCents)} />
+          <Row label="Labor" cents={laborCents} />
+          <Row label="Materials" cents={materialsCents} />
           {markupCents > 0 && (
             <Row
               label={`Markup (${markupPct}%) — hidden from customer`}
-              value={formatUSD(markupCents)}
+              cents={markupCents}
             />
           )}
         </div>
@@ -214,7 +214,7 @@ export default function Calculator() {
             Quoted total
           </span>
           <span className="font-mono text-3xl font-bold text-safety">
-            {formatUSD(totalCents)}
+            {hasAny ? formatUSD(totalCents) : "—"}
           </span>
         </div>
       </div>
@@ -225,6 +225,7 @@ export default function Calculator() {
           onClick={copyQuote}
           disabled={!hasAny}
           className="btn-primary"
+          title={!hasAny ? "Enter at least one value to copy" : undefined}
         >
           {copied ? "Copied!" : "Copy quote"}
         </button>
@@ -249,11 +250,11 @@ export default function Calculator() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, cents }: { label: string; cents: number }) {
   return (
     <div className="flex items-baseline justify-between">
       <span className="text-fog">{label}</span>
-      <span className="font-mono">{value}</span>
+      <span className="font-mono">{cents === 0 ? "—" : formatUSD(cents)}</span>
     </div>
   );
 }
