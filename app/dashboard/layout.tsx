@@ -47,7 +47,7 @@ export default async function DashboardLayout({
               My jobs
             </a>
             <a
-              href="/#calculator"
+              href="/dashboard/new-quote"
               className="text-fog transition hover:text-chalk"
             >
               New quote

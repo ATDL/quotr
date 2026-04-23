@@ -9,7 +9,11 @@ import { formatUSD, toCents } from "@/lib/utils/money";
  * No auth required. Stateless. If the user wants to save or close out a quote,
  * that flow kicks them into sign-in (handled elsewhere).
  */
-export default function Calculator() {
+type Props = {
+  saveAction?: (formData: FormData) => Promise<void>;
+};
+
+export default function Calculator({ saveAction }: Props = {}) {
   const [hours, setHours] = useState<string>("");
   const [rate, setRate] = useState<string>("");
   const [materials, setMaterials] = useState<string>("");
@@ -232,9 +236,28 @@ export default function Calculator() {
         <button type="button" onClick={reset} className="btn-ghost">
           Reset
         </button>
-        <a href="/login" className="btn-ghost">
-          Save &amp; close out later
-        </a>
+        {saveAction ? (
+          <form action={saveAction}>
+            <input type="hidden" name="hours" value={hours} />
+            <input type="hidden" name="rate" value={rate} />
+            <input type="hidden" name="materials" value={materials} />
+            <input type="hidden" name="markupPct" value={markupPct} />
+            <input type="hidden" name="customerName" value={customerName} />
+            <input type="hidden" name="scope" value={scope} />
+            <button
+              type="submit"
+              disabled={!hasAny}
+              className="btn-primary"
+              title={!hasAny ? "Enter at least one value to save" : undefined}
+            >
+              Save quote →
+            </button>
+          </form>
+        ) : (
+          <a href="/login" className="btn-ghost">
+            Save &amp; close out later
+          </a>
+        )}
       </div>
 
       <p className="mt-4 text-xs text-fog">
@@ -242,10 +265,12 @@ export default function Calculator() {
         baked silently into the total. Your internal breakdown above stays
         here.
       </p>
-      <p className="mt-1 text-xs text-fog">
-        Close out this job later to see quoted vs. actual, profit, and
-        variance. First close-out is free.
-      </p>
+      {!saveAction && (
+        <p className="mt-1 text-xs text-fog">
+          Close out this job later to see quoted vs. actual, profit, and
+          variance. First close-out is free.
+        </p>
+      )}
     </div>
   );
 }
