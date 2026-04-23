@@ -199,7 +199,27 @@ export default function Calculator({ saveAction }: Props = {}) {
         </div>
       </div>
 
-      <div className="mt-8 rounded-lg border border-white/10 bg-ink p-5">
+      <details className="group mt-6 rounded-lg border border-safety/25 bg-safety/5 p-4">
+        <summary className="cursor-pointer list-none text-sm font-semibold text-safety">
+          <span className="mr-2 group-open:hidden">▸</span>
+          <span className="mr-2 hidden group-open:inline">▾</span>
+          Before you quote — did you factor these in?
+        </summary>
+        <ul className="mt-3 space-y-1.5 text-sm text-fog">
+          <li>• Drive time, both ways, plus fuel</li>
+          <li>• Materials pickup or a second trip for parts</li>
+          <li>• Site prep, cleanup, and haul-away</li>
+          <li>• Risk of a callback or warranty fix</li>
+          <li>• Permit fees or inspection delays</li>
+        </ul>
+        <p className="mt-3 text-xs text-fog">
+          These are the lines that sink margins. Quotr won&rsquo;t pad your
+          number — but a few close-outs will show you exactly which job types
+          you keep underbidding.
+        </p>
+      </details>
+
+      <div className="mt-6 rounded-lg border border-white/10 bg-ink p-5">
         <div className="mb-3 text-[11px] uppercase tracking-wider text-fog">
           Your view (internal)
         </div>

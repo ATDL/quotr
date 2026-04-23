@@ -78,61 +78,90 @@ export default async function DashboardHome() {
         {!hasJobs ? (
           <EmptyState />
         ) : (
-          <>
+          <div className="space-y-6">
+            <LastJobCard job={jobs![0]} />
             <SummaryBar jobs={jobs!} />
+            <ByJobTypeCard jobs={jobs!} />
             <div className="overflow-x-auto rounded-xl border border-white/10">
-            <table className="w-full min-w-[600px] text-sm">
-              <thead className="bg-steel text-left text-xs uppercase tracking-wider text-fog">
-                <tr>
-                  <th className="px-4 py-3">Job</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3 text-right">Quoted</th>
-                  <th className="px-4 py-3 text-right">Actual</th>
-                  <th className="px-4 py-3 text-right">Profit</th>
-                  <th className="px-4 py-3 text-right">Margin</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs!.map((j) => (
-                  <tr
-                    key={j.close_out_id}
-                    className="border-t border-white/5 transition hover:bg-white/5"
-                  >
-                    <td className="px-4 py-3">
-                      <div className="font-semibold">
-                        {j.customer_name || "—"}
-                      </div>
-                      <div className="text-xs text-fog">
-                        {j.scope || "No scope"}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-fog">{j.job_type || "—"}</td>
-                    <td className="px-4 py-3 text-right font-mono">
-                      {formatUSD(j.quoted_total_cents)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono">
-                      {formatUSD(j.actual_total_cents)}
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-right font-mono ${
-                        j.computed_profit_cents < 0 ? "text-rust" : "text-moss"
-                      }`}
-                    >
-                      {formatUSD(j.computed_profit_cents)}
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-right font-mono ${
-                        j.computed_profit_pct < 0 ? "text-rust" : "text-moss"
-                      }`}
-                    >
-                      {formatPct(j.computed_profit_pct)}
-                    </td>
+              <table className="w-full min-w-[720px] text-sm">
+                <thead className="bg-steel text-left text-xs uppercase tracking-wider text-fog">
+                  <tr>
+                    <th className="px-4 py-3">Job</th>
+                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3 text-right">Quoted</th>
+                    <th className="px-4 py-3 text-right">Actual</th>
+                    <th className="px-4 py-3 text-right">Profit</th>
+                    <th className="px-4 py-3 text-right">Margin</th>
+                    <th className="px-4 py-3 text-right">Variance</th>
+                    <th className="px-2 py-3"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {jobs!.map((j) => (
+                    <tr
+                      key={j.close_out_id}
+                      className="border-t border-white/5 transition hover:bg-white/5"
+                    >
+                      <td className="px-4 py-3">
+                        <div className="font-semibold">
+                          {j.customer_name || "—"}
+                        </div>
+                        <div className="text-xs text-fog">
+                          {j.scope || "No scope"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-fog">
+                        {j.job_type || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono">
+                        {formatUSD(j.quoted_total_cents)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono">
+                        {formatUSD(j.actual_total_cents)}
+                      </td>
+                      <td
+                        className={`px-4 py-3 text-right font-mono ${
+                          j.computed_profit_cents < 0
+                            ? "text-rust"
+                            : "text-moss"
+                        }`}
+                      >
+                        {formatUSD(j.computed_profit_cents)}
+                      </td>
+                      <td
+                        className={`px-4 py-3 text-right font-mono ${
+                          j.computed_profit_pct < 0 ? "text-rust" : "text-moss"
+                        }`}
+                      >
+                        {formatPct(j.computed_profit_pct)}
+                      </td>
+                      <td
+                        className={`px-4 py-3 text-right font-mono ${
+                          j.computed_variance_pct > 5
+                            ? "text-rust"
+                            : j.computed_variance_pct < -5
+                            ? "text-moss"
+                            : "text-fog"
+                        }`}
+                      >
+                        {j.computed_variance_pct > 0 ? "+" : ""}
+                        {formatPct(j.computed_variance_pct)}
+                      </td>
+                      <td className="px-2 py-3 text-right">
+                        <a
+                          href={`/dashboard/close-out/${j.quote_id}/result`}
+                          className="text-fog transition hover:text-chalk"
+                          aria-label="View result"
+                        >
+                          →
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-          </>
         )}
       </section>
     </div>
@@ -153,49 +182,232 @@ type Job = {
   closed_at: string;
 };
 
+function LastJobCard({ job }: { job: Job }) {
+  const profitGood = job.computed_profit_cents >= 0;
+  const varianceBad = job.computed_variance_pct > 5;
+  const varianceGood = job.computed_variance_pct < -5;
+
+  return (
+    <a
+      href={`/dashboard/close-out/${job.quote_id}/result`}
+      className={`block rounded-xl border p-5 transition hover:border-white/25 ${
+        profitGood
+          ? "border-moss/30 bg-moss/5"
+          : "border-rust/40 bg-rust/5"
+      }`}
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-[11px] uppercase tracking-wider text-fog">
+          Your last job
+        </span>
+        <span className="text-xs text-fog">View result →</span>
+      </div>
+      <div className="flex items-baseline justify-between gap-4">
+        <div className="min-w-0">
+          <div className="truncate font-semibold">
+            {job.customer_name || "Unnamed customer"}
+          </div>
+          <div className="truncate text-sm text-fog">
+            {job.scope || job.job_type || "No scope"}
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div
+            className={`font-mono text-2xl font-bold ${
+              profitGood ? "text-moss" : "text-rust"
+            }`}
+          >
+            {profitGood ? "+" : ""}
+            {formatUSD(job.computed_profit_cents)}
+          </div>
+          <div className="mt-0.5 font-mono text-xs text-fog">
+            {formatPct(job.computed_profit_pct)} margin ·{" "}
+            <span
+              className={
+                varianceBad
+                  ? "text-rust"
+                  : varianceGood
+                  ? "text-moss"
+                  : "text-fog"
+              }
+            >
+              {job.computed_variance_pct > 0 ? "+" : ""}
+              {formatPct(job.computed_variance_pct)} vs. quote
+            </span>
+          </div>
+        </div>
+      </div>
+    </a>
+  );
+}
+
 function SummaryBar({ jobs }: { jobs: Job[] }) {
   const totalProfit = jobs.reduce((s, j) => s + j.computed_profit_cents, 0);
   const margins = jobs
     .map((j) => j.computed_profit_pct)
     .filter(Number.isFinite);
+  const variances = jobs
+    .map((j) => j.computed_variance_pct)
+    .filter(Number.isFinite);
   const avgMargin =
     margins.length > 0
       ? margins.reduce((s, m) => s + m, 0) / margins.length
       : null;
+  const avgVariance =
+    variances.length > 0
+      ? variances.reduce((s, v) => s + v, 0) / variances.length
+      : null;
 
   return (
-    <div className="mb-4 grid grid-cols-3 gap-3">
-      <div className="rounded-lg border border-white/10 bg-steel px-4 py-3">
-        <div className="text-[11px] uppercase tracking-wider text-fog">
-          Jobs closed
-        </div>
-        <div className="mt-1 font-mono text-xl font-bold">{jobs.length}</div>
-      </div>
-      <div className="rounded-lg border border-white/10 bg-steel px-4 py-3">
-        <div className="text-[11px] uppercase tracking-wider text-fog">
-          Total profit
-        </div>
-        <div
-          className={`mt-1 font-mono text-xl font-bold ${
-            totalProfit < 0 ? "text-rust" : "text-moss"
-          }`}
-        >
-          {formatUSD(totalProfit)}
-        </div>
-      </div>
-      <div className="rounded-lg border border-white/10 bg-steel px-4 py-3">
-        <div className="text-[11px] uppercase tracking-wider text-fog">
-          Avg margin
-        </div>
-        <div
-          className={`mt-1 font-mono text-xl font-bold ${
-            avgMargin !== null && avgMargin < 0 ? "text-rust" : "text-moss"
-          }`}
-        >
-          {avgMargin !== null ? formatPct(avgMargin) : "—"}
-        </div>
-      </div>
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <Stat label="Jobs closed" value={String(jobs.length)} />
+      <Stat
+        label="Total profit"
+        value={formatUSD(totalProfit)}
+        tone={totalProfit < 0 ? "bad" : "good"}
+      />
+      <Stat
+        label="Avg margin"
+        value={avgMargin !== null ? formatPct(avgMargin) : "—"}
+        tone={
+          avgMargin === null ? undefined : avgMargin < 0 ? "bad" : "good"
+        }
+      />
+      <Stat
+        label="Avg variance"
+        value={
+          avgVariance !== null
+            ? `${avgVariance > 0 ? "+" : ""}${formatPct(avgVariance)}`
+            : "—"
+        }
+        tone={
+          avgVariance === null
+            ? undefined
+            : avgVariance > 5
+            ? "bad"
+            : avgVariance < -5
+            ? "good"
+            : undefined
+        }
+        hint={
+          avgVariance !== null && avgVariance > 10
+            ? "You're underbidding on average — pad future quotes."
+            : undefined
+        }
+      />
     </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  label: string;
+  value: string;
+  tone?: "good" | "bad";
+  hint?: string;
+}) {
+  const toneClass =
+    tone === "bad" ? "text-rust" : tone === "good" ? "text-moss" : "text-chalk";
+  return (
+    <div className="rounded-lg border border-white/10 bg-steel px-4 py-3">
+      <div className="text-[11px] uppercase tracking-wider text-fog">
+        {label}
+      </div>
+      <div className={`mt-1 font-mono text-xl font-bold ${toneClass}`}>
+        {value}
+      </div>
+      {hint && <div className="mt-1 text-[11px] text-rust">{hint}</div>}
+    </div>
+  );
+}
+
+function ByJobTypeCard({ jobs }: { jobs: Job[] }) {
+  const typed = jobs.filter((j) => !!j.job_type);
+  if (typed.length < 2) return null;
+
+  type Bucket = { count: number; totalProfit: number; margins: number[] };
+  const byType = new Map<string, Bucket>();
+
+  for (const j of typed) {
+    const existing = byType.get(j.job_type!) ?? {
+      count: 0,
+      totalProfit: 0,
+      margins: [],
+    };
+    existing.count += 1;
+    existing.totalProfit += j.computed_profit_cents;
+    if (Number.isFinite(j.computed_profit_pct)) {
+      existing.margins.push(j.computed_profit_pct);
+    }
+    byType.set(j.job_type!, existing);
+  }
+
+  const rows = Array.from(byType.entries())
+    .filter(([, v]) => v.count >= 2)
+    .map(([type, v]) => ({
+      type,
+      count: v.count,
+      totalProfit: v.totalProfit,
+      avgMargin:
+        v.margins.length > 0
+          ? v.margins.reduce((s, m) => s + m, 0) / v.margins.length
+          : null,
+    }))
+    .sort((a, b) => b.totalProfit - a.totalProfit);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <section>
+      <h3 className="mb-3 text-xs uppercase tracking-wider text-fog">
+        Profit by job type
+      </h3>
+      <div className="grid gap-2 md:grid-cols-2">
+        {rows.map((r) => {
+          const profitBad = r.totalProfit < 0;
+          const marginBad = r.avgMargin !== null && r.avgMargin < 0;
+          return (
+            <div
+              key={r.type}
+              className="rounded-lg border border-white/10 bg-steel px-4 py-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-semibold">{r.type}</div>
+                  <div className="text-xs text-fog">
+                    {r.count} jobs closed
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div
+                    className={`font-mono text-lg font-bold ${
+                      profitBad ? "text-rust" : "text-moss"
+                    }`}
+                  >
+                    {formatUSD(r.totalProfit)}
+                  </div>
+                  <div
+                    className={`font-mono text-xs ${
+                      marginBad ? "text-rust" : "text-moss"
+                    }`}
+                  >
+                    {r.avgMargin !== null ? formatPct(r.avgMargin) : "—"} avg
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[11px] text-fog">
+        After 5+ jobs of a type, you can trust this signal. Consider dropping
+        types that stay red.
+      </p>
+    </section>
   );
 }
 
@@ -208,7 +420,7 @@ function EmptyState() {
         punch in your actual hours and materials. You&rsquo;ll see quoted vs.
         actual, profit, and variance right here.
       </p>
-      <a href="/#calculator" className="btn-primary mt-6 inline-flex">
+      <a href="/dashboard/new-quote" className="btn-primary mt-6 inline-flex">
         Start a quote →
       </a>
     </div>

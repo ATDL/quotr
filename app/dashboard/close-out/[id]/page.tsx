@@ -107,7 +107,8 @@ export default async function CloseOutPage({
       related_id: quoteId,
     });
 
-    redirect("/dashboard");
+    // Redirect to the result screen — the feedback-loop payoff.
+    redirect(`/dashboard/close-out/${quoteId}/result`);
   }
 
   return (
