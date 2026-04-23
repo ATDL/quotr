@@ -13,19 +13,43 @@ type Quote = {
   quoted_total_cents: number;
 };
 
+type Mode = "new" | "edit";
+
+type Defaults = {
+  actualHours: number;
+  actualMaterialsCents: number;
+  jobType: string | null;
+  surpriseNote: string | null;
+};
+
 type Props = {
   quote: Quote;
   credits: number;
-  submitCloseOut: (formData: FormData) => Promise<void>;
+  mode?: Mode;
+  defaults?: Defaults;
+  submitAction: (formData: FormData) => Promise<void>;
 };
 
-export default function CloseOutForm({ quote, credits, submitCloseOut }: Props) {
-  const [actualHours, setActualHours] = useState(
-    String(quote.quoted_hours)
-  );
-  const [actualMaterials, setActualMaterials] = useState(
-    String(quote.quoted_materials_cents / 100)
-  );
+export default function CloseOutForm({
+  quote,
+  credits,
+  mode = "new",
+  defaults,
+  submitAction,
+}: Props) {
+  const isEdit = mode === "edit";
+
+  const initialHours =
+    defaults?.actualHours !== undefined
+      ? String(defaults.actualHours)
+      : String(quote.quoted_hours);
+  const initialMaterials =
+    defaults?.actualMaterialsCents !== undefined
+      ? String(defaults.actualMaterialsCents / 100)
+      : String(quote.quoted_materials_cents / 100);
+
+  const [actualHours, setActualHours] = useState(initialHours);
+  const [actualMaterials, setActualMaterials] = useState(initialMaterials);
 
   const { actualTotalCents, profitCents, profitPct, variancePct } =
     useMemo(() => {
@@ -48,7 +72,8 @@ export default function CloseOutForm({ quote, credits, submitCloseOut }: Props) 
       return { actualTotalCents, profitCents, profitPct, variancePct };
     }, [actualHours, actualMaterials, quote]);
 
-  if (credits < 1) {
+  // Paywall only applies to new close-outs — editing never debits a credit.
+  if (!isEdit && credits < 1) {
     return (
       <div className="mx-auto max-w-lg space-y-6">
         <header>
@@ -69,16 +94,23 @@ export default function CloseOutForm({ quote, credits, submitCloseOut }: Props) 
     );
   }
 
+  const backHref = isEdit
+    ? `/dashboard/close-out/${quote.id}/result`
+    : "/dashboard";
+  const backLabel = isEdit ? "Back to result" : "Back to My jobs";
+  const pageTitle = isEdit ? "Edit close-out" : "Close out job";
+  const submitLabel = isEdit ? "Save changes" : "Close out job — use 1 credit";
+
   return (
     <div className="mx-auto max-w-lg space-y-6">
       <header>
         <a
-          href="/dashboard"
+          href={backHref}
           className="mb-4 inline-flex items-center gap-2 text-sm text-fog hover:text-chalk"
         >
-          <span aria-hidden>←</span> Back to My jobs
+          <span aria-hidden>←</span> {backLabel}
         </a>
-        <h1 className="text-3xl font-bold tracking-tight">Close out job</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{pageTitle}</h1>
         <p className="mt-1 text-sm text-fog">
           {quote.customer_name || "Unnamed customer"}
           {quote.scope ? ` · ${quote.scope}` : ""}
@@ -102,11 +134,13 @@ export default function CloseOutForm({ quote, credits, submitCloseOut }: Props) 
         </div>
         <div className="mt-2 flex justify-between border-t border-white/10 pt-2 font-semibold">
           <span>Quoted total</span>
-          <span className="font-mono">{formatUSD(quote.quoted_total_cents)}</span>
+          <span className="font-mono">
+            {formatUSD(quote.quoted_total_cents)}
+          </span>
         </div>
       </div>
 
-      <form action={submitCloseOut} className="space-y-5">
+      <form action={submitAction} className="space-y-5">
         <input type="hidden" name="quoteId" value={quote.id} />
 
         <div>
@@ -143,6 +177,10 @@ export default function CloseOutForm({ quote, credits, submitCloseOut }: Props) 
             onChange={(e) => setActualMaterials(e.target.value)}
             required
           />
+          <p className="mt-1 text-[11px] text-fog">
+            Total across everything — glue, nails, lumber, etc. Quotr tracks
+            the total so your profit math stays clean.
+          </p>
         </div>
 
         <div>
@@ -155,6 +193,7 @@ export default function CloseOutForm({ quote, credits, submitCloseOut }: Props) 
             className="input"
             type="text"
             placeholder="e.g. Breaker panel, Bathroom remodel, HVAC install"
+            defaultValue={defaults?.jobType ?? ""}
           />
           <p className="mt-1 text-[11px] text-fog">
             Used to group jobs on your dashboard so you can see profit by type.
@@ -170,6 +209,7 @@ export default function CloseOutForm({ quote, credits, submitCloseOut }: Props) 
             name="surpriseNote"
             className="input min-h-[80px] resize-none"
             placeholder="e.g. Second trip for parts cost 2 extra hours I didn't quote"
+            defaultValue={defaults?.surpriseNote ?? ""}
           />
         </div>
 
@@ -227,16 +267,25 @@ export default function CloseOutForm({ quote, credits, submitCloseOut }: Props) 
           </div>
         </div>
 
-        <div className="flex items-center justify-between rounded-lg border border-white/10 bg-steel px-4 py-3 text-sm">
-          <span className="text-fog">Credits after close-out</span>
-          <span className="font-mono font-semibold">
-            {credits - 1} remaining
-          </span>
-        </div>
+        {!isEdit && (
+          <div className="flex items-center justify-between rounded-lg border border-white/10 bg-steel px-4 py-3 text-sm">
+            <span className="text-fog">Credits after close-out</span>
+            <span className="font-mono font-semibold">
+              {credits - 1} remaining
+            </span>
+          </div>
+        )}
 
         <button type="submit" className="btn-primary w-full">
-          Close out job — use 1 credit
+          {submitLabel}
         </button>
+
+        {isEdit && (
+          <p className="text-center text-[11px] text-fog">
+            Editing a close-out doesn&rsquo;t use a new credit. Profit and
+            variance are recomputed from your new numbers.
+          </p>
+        )}
       </form>
     </div>
   );

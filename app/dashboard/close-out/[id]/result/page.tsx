@@ -76,12 +76,20 @@ export default async function CloseOutResultPage({
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
-      <a
-        href="/dashboard"
-        className="inline-flex items-center gap-2 text-sm text-fog hover:text-chalk"
-      >
-        <span aria-hidden>←</span> Back to My jobs
-      </a>
+      <div className="flex items-center justify-between">
+        <a
+          href="/dashboard"
+          className="inline-flex items-center gap-2 text-sm text-fog hover:text-chalk"
+        >
+          <span aria-hidden>←</span> Back to My jobs
+        </a>
+        <a
+          href={`/dashboard/close-out/${params.id}/edit`}
+          className="text-sm text-fog hover:text-chalk"
+        >
+          Edit →
+        </a>
+      </div>
 
       <header>
         <div className="text-xs uppercase tracking-wider text-moss">

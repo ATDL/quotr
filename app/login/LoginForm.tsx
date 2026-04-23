@@ -9,7 +9,7 @@ type Mode = "sign-in" | "sign-up";
 type Status = "idle" | "submitting" | "error";
 
 export default function LoginForm() {
-  const [mode, setMode] = useState<Mode>("sign-up");
+  const [mode, setMode] = useState<Mode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<Status>("idle");
@@ -152,30 +152,17 @@ export default function LoginForm() {
           </button>
         </form>
 
-        <div className="mt-6 border-t border-white/10 pt-4 text-center text-sm text-fog">
-          {isSignUp ? (
-            <>
-              Already have an account?{" "}
-              <button
-                type="button"
-                onClick={() => switchMode("sign-in")}
-                className="text-chalk underline hover:text-rust"
-              >
-                Sign in
-              </button>
-            </>
-          ) : (
-            <>
-              New here?{" "}
-              <button
-                type="button"
-                onClick={() => switchMode("sign-up")}
-                className="text-chalk underline hover:text-rust"
-              >
-                Create an account
-              </button>
-            </>
-          )}
+        <div className="mt-6 border-t border-white/10 pt-5">
+          <p className="mb-3 text-center text-sm text-fog">
+            {isSignUp ? "Already have an account?" : "New to Quotr?"}
+          </p>
+          <button
+            type="button"
+            onClick={() => switchMode(isSignUp ? "sign-in" : "sign-up")}
+            className="btn-ghost w-full"
+          >
+            {isSignUp ? "Sign in instead" : "Create an account"}
+          </button>
         </div>
       </div>
     </main>

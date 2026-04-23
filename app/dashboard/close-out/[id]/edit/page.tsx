@@ -1,9 +1,9 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { toCents } from "@/lib/utils/money";
-import CloseOutForm from "./CloseOutForm";
+import CloseOutForm from "../CloseOutForm";
 
-export default async function CloseOutPage({
+export default async function EditCloseOutPage({
   params,
 }: {
   params: { id: string };
@@ -15,26 +15,23 @@ export default async function CloseOutPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // RLS ensures this only returns a row the user owns.
   const { data: quote } = await supabase
     .from("quotes")
     .select(
-      "id, customer_name, scope, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, status"
+      "id, customer_name, scope, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents"
     )
     .eq("id", params.id)
     .single();
 
-  if (!quote || quote.status !== "open") notFound();
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("credits_balance")
-    .eq("id", user.id)
+  const { data: closeOut } = await supabase
+    .from("close_outs")
+    .select("actual_hours, actual_materials_cents, surprise_note, job_type")
+    .eq("quote_id", params.id)
     .single();
 
-  const credits = profile?.credits_balance ?? 0;
+  if (!quote || !closeOut) notFound();
 
-  async function submitCloseOut(formData: FormData) {
+  async function updateCloseOut(formData: FormData) {
     "use server";
 
     const supabase = createClient();
@@ -52,22 +49,14 @@ export default async function CloseOutPage({
     const surpriseNote =
       ((formData.get("surpriseNote") as string) || "").trim() || null;
 
-    // Re-fetch for authoritative numbers — never trust client-submitted totals.
+    // Re-fetch quote for authoritative rate + quoted total.
     const { data: q } = await supabase
       .from("quotes")
-      .select("id, hourly_rate_cents, quoted_total_cents, status")
+      .select("hourly_rate_cents, quoted_total_cents")
       .eq("id", quoteId)
       .single();
 
-    if (!q || q.status !== "open") redirect("/dashboard");
-
-    const { data: p } = await supabase
-      .from("users")
-      .select("credits_balance")
-      .eq("id", user.id)
-      .single();
-
-    if ((p?.credits_balance ?? 0) < 1) redirect("/dashboard/credits");
+    if (!q) redirect("/dashboard");
 
     const actualMaterialsCents = toCents(actualMaterials);
     const actualLaborCents = Math.round(actualHours * q.hourly_rate_cents);
@@ -83,39 +72,39 @@ export default async function CloseOutPage({
           100
         : 0;
 
-    // Trigger on_close_out_created flips quote status to 'closed'.
-    const { error } = await supabase.from("close_outs").insert({
-      quote_id: quoteId,
-      user_id: user.id,
-      actual_hours: actualHours,
-      actual_materials_cents: actualMaterialsCents,
-      surprise_note: surpriseNote,
-      job_type: jobType,
-      computed_profit_cents: profitCents,
-      computed_profit_pct: parseFloat(profitPct.toFixed(2)),
-      computed_variance_pct: parseFloat(variancePct.toFixed(2)),
-      credits_spent: 1,
-    });
+    // UPDATE — no new credit debit, no status change (still 'closed').
+    // RLS's "close_outs owner all" policy enforces ownership on the UPDATE.
+    const { error } = await supabase
+      .from("close_outs")
+      .update({
+        actual_hours: actualHours,
+        actual_materials_cents: actualMaterialsCents,
+        surprise_note: surpriseNote,
+        job_type: jobType,
+        computed_profit_cents: profitCents,
+        computed_profit_pct: parseFloat(profitPct.toFixed(2)),
+        computed_variance_pct: parseFloat(variancePct.toFixed(2)),
+      })
+      .eq("quote_id", quoteId)
+      .eq("user_id", user.id);
 
     if (error) throw new Error(error.message);
 
-    // Trigger on_credits_ledger_insert decrements users.credits_balance.
-    await supabase.from("credits_ledger").insert({
-      user_id: user.id,
-      delta: -1,
-      reason: "close_out_debit",
-      related_id: quoteId,
-    });
-
-    // Redirect to the result screen — the feedback-loop payoff.
     redirect(`/dashboard/close-out/${quoteId}/result`);
   }
 
   return (
     <CloseOutForm
       quote={quote}
-      credits={credits}
-      submitAction={submitCloseOut}
+      credits={0}
+      mode="edit"
+      defaults={{
+        actualHours: closeOut.actual_hours,
+        actualMaterialsCents: closeOut.actual_materials_cents,
+        jobType: closeOut.job_type,
+        surpriseNote: closeOut.surprise_note,
+      }}
+      submitAction={updateCloseOut}
     />
   );
 }
