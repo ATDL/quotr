@@ -7,6 +7,7 @@ type Quote = {
   id: string;
   customer_name: string | null;
   scope: string | null;
+  watching_for: string | null;
   quoted_hours: number;
   quoted_materials_cents: number;
   hourly_rate_cents: number;
@@ -20,6 +21,7 @@ type Defaults = {
   actualMaterialsCents: number;
   jobType: string | null;
   surpriseNote: string | null;
+  wasWatchingCorrect?: boolean | null;
 };
 
 type Props = {
@@ -50,6 +52,9 @@ export default function CloseOutForm({
 
   const [actualHours, setActualHours] = useState(initialHours);
   const [actualMaterials, setActualMaterials] = useState(initialMaterials);
+  const [wasWatchingCorrect, setWasWatchingCorrect] = useState<boolean | null>(
+    defaults?.wasWatchingCorrect ?? null
+  );
 
   const { actualTotalCents, profitCents, profitPct, variancePct } =
     useMemo(() => {
@@ -142,6 +147,53 @@ export default function CloseOutForm({
 
       <form action={submitAction} className="space-y-5">
         <input type="hidden" name="quoteId" value={quote.id} />
+        <input
+          type="hidden"
+          name="wasWatchingCorrect"
+          value={
+            wasWatchingCorrect === null ? "" : String(wasWatchingCorrect)
+          }
+        />
+
+        {quote.watching_for && (
+          <div className="rounded-lg border border-safety/30 bg-safety/5 p-4">
+            <div className="text-[11px] uppercase tracking-wider text-fog">
+              You said you were watching for
+            </div>
+            <p className="mt-1 text-sm italic text-chalk">
+              &ldquo;{quote.watching_for}&rdquo;
+            </p>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold">Were you right?</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setWasWatchingCorrect(true)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                    wasWatchingCorrect === true
+                      ? "border-moss bg-moss/20 text-chalk"
+                      : "border-white/15 text-fog hover:border-white/30"
+                  }`}
+                  aria-pressed={wasWatchingCorrect === true}
+                >
+                  Yes, called it
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWasWatchingCorrect(false)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                    wasWatchingCorrect === false
+                      ? "border-rust bg-rust/20 text-chalk"
+                      : "border-white/15 text-fog hover:border-white/30"
+                  }`}
+                  aria-pressed={wasWatchingCorrect === false}
+                >
+                  No
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div>
           <label className="label" htmlFor="actualHours">

@@ -19,7 +19,7 @@ export default async function CloseOutPage({
   const { data: quote } = await supabase
     .from("quotes")
     .select(
-      "id, customer_name, scope, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, status"
+      "id, customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, status"
     )
     .eq("id", params.id)
     .single();
@@ -51,6 +51,9 @@ export default async function CloseOutPage({
       ((formData.get("jobType") as string) || "").trim() || null;
     const surpriseNote =
       ((formData.get("surpriseNote") as string) || "").trim() || null;
+    const rawWatching = (formData.get("wasWatchingCorrect") as string) || "";
+    const wasWatchingCorrect =
+      rawWatching === "true" ? true : rawWatching === "false" ? false : null;
 
     // Re-fetch for authoritative numbers — never trust client-submitted totals.
     const { data: q } = await supabase
@@ -91,6 +94,7 @@ export default async function CloseOutPage({
       actual_materials_cents: actualMaterialsCents,
       surprise_note: surpriseNote,
       job_type: jobType,
+      was_watching_correct: wasWatchingCorrect,
       computed_profit_cents: profitCents,
       computed_profit_pct: parseFloat(profitPct.toFixed(2)),
       computed_variance_pct: parseFloat(variancePct.toFixed(2)),

@@ -19,6 +19,8 @@ async function saveQuote(formData: FormData) {
   const customerName =
     ((formData.get("customerName") as string) || "").trim() || null;
   const scope = ((formData.get("scope") as string) || "").trim() || null;
+  const watchingFor =
+    ((formData.get("watchingFor") as string) || "").trim() || null;
 
   const laborCents = toCents(hours * rate);
   const materialsCents = toCents(materials);
@@ -30,6 +32,7 @@ async function saveQuote(formData: FormData) {
     user_id: user.id,
     customer_name: customerName,
     scope,
+    watching_for: watchingFor,
     quoted_hours: hours,
     quoted_materials_cents: materialsCents,
     hourly_rate_cents: toCents(rate),

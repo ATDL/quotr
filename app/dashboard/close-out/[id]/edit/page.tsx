@@ -18,14 +18,16 @@ export default async function EditCloseOutPage({
   const { data: quote } = await supabase
     .from("quotes")
     .select(
-      "id, customer_name, scope, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents"
+      "id, customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents"
     )
     .eq("id", params.id)
     .single();
 
   const { data: closeOut } = await supabase
     .from("close_outs")
-    .select("actual_hours, actual_materials_cents, surprise_note, job_type")
+    .select(
+      "actual_hours, actual_materials_cents, surprise_note, job_type, was_watching_correct"
+    )
     .eq("quote_id", params.id)
     .single();
 
@@ -48,6 +50,9 @@ export default async function EditCloseOutPage({
       ((formData.get("jobType") as string) || "").trim() || null;
     const surpriseNote =
       ((formData.get("surpriseNote") as string) || "").trim() || null;
+    const rawWatching = (formData.get("wasWatchingCorrect") as string) || "";
+    const wasWatchingCorrect =
+      rawWatching === "true" ? true : rawWatching === "false" ? false : null;
 
     // Re-fetch quote for authoritative rate + quoted total.
     const { data: q } = await supabase
@@ -81,6 +86,7 @@ export default async function EditCloseOutPage({
         actual_materials_cents: actualMaterialsCents,
         surprise_note: surpriseNote,
         job_type: jobType,
+        was_watching_correct: wasWatchingCorrect,
         computed_profit_cents: profitCents,
         computed_profit_pct: parseFloat(profitPct.toFixed(2)),
         computed_variance_pct: parseFloat(variancePct.toFixed(2)),
@@ -103,6 +109,7 @@ export default async function EditCloseOutPage({
         actualMaterialsCents: closeOut.actual_materials_cents,
         jobType: closeOut.job_type,
         surpriseNote: closeOut.surprise_note,
+        wasWatchingCorrect: closeOut.was_watching_correct ?? null,
       }}
       submitAction={updateCloseOut}
     />

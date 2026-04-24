@@ -79,6 +79,7 @@ export default async function DashboardHome() {
           <EmptyState />
         ) : (
           <div className="space-y-6">
+            <AccuracyRow jobs={jobs!} />
             <LastJobCard job={jobs![0]} />
             <SummaryBar jobs={jobs!} />
             <ByJobTypeCard jobs={jobs!} />
@@ -408,6 +409,175 @@ function ByJobTypeCard({ jobs }: { jobs: Job[] }) {
         types that stay red.
       </p>
     </section>
+  );
+}
+
+/**
+ * Accuracy row = the self-reward scoreboard.
+ *
+ * Formula: accuracy = clamp(100 - (avg_abs_variance * 2), 0, 100) over the
+ * user's last 10 close-outs. Single number that goes up as they close out
+ * more accurately — the "my number's rising" signal.
+ */
+function AccuracyRow({ jobs }: { jobs: Job[] }) {
+  const last = jobs.slice(0, 10);
+  const abs = last
+    .map((j) => Math.abs(j.computed_variance_pct))
+    .filter(Number.isFinite);
+  const score =
+    abs.length >= 3
+      ? Math.max(
+          0,
+          Math.min(100, Math.round(100 - (abs.reduce((s, v) => s + v, 0) / abs.length) * 2))
+        )
+      : null;
+
+  // Streak = consecutive most-recent close-outs within ±10% variance.
+  let streak = 0;
+  for (const j of jobs) {
+    if (Math.abs(j.computed_variance_pct) <= 10) streak++;
+    else break;
+  }
+
+  return (
+    <div className="grid gap-3 md:grid-cols-[auto_1fr]">
+      <AccuracyDial score={score} sampleCount={last.length} />
+      <StreakBanner streak={streak} />
+    </div>
+  );
+}
+
+function AccuracyDial({
+  score,
+  sampleCount,
+}: {
+  score: number | null;
+  sampleCount: number;
+}) {
+  const size = 160;
+  const stroke = 12;
+  const r = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * r;
+  const pct = score ?? 0;
+  const dash = (pct / 100) * circumference;
+
+  const label =
+    score === null
+      ? sampleCount === 0
+        ? "Close out 3 jobs to see your accuracy"
+        : `First ${sampleCount} data point${sampleCount === 1 ? "" : "s"} in`
+      : score >= 90
+      ? "Dialed in"
+      : score >= 75
+      ? "Getting sharper"
+      : score >= 60
+      ? "Finding your range"
+      : score >= 40
+      ? "Early days — keep closing out"
+      : "Noisy — trust the data, not the gut";
+
+  const stroke_color =
+    score === null
+      ? "#374151"
+      : score >= 75
+      ? "#3FA373"
+      : score >= 40
+      ? "#E07A3A"
+      : "#F5A524";
+
+  return (
+    <div
+      className="flex items-center gap-4 rounded-xl border border-white/10 bg-steel p-5"
+      role="meter"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={score ?? 0}
+      aria-label="Quote accuracy score"
+    >
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90">
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth={stroke}
+            fill="none"
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            stroke={stroke_color}
+            strokeWidth={stroke}
+            fill="none"
+            strokeLinecap="round"
+            strokeDasharray={`${dash} ${circumference}`}
+            style={{ transition: "stroke-dasharray 800ms cubic-bezier(0.2,0.8,0.2,1)" }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <div className="font-mono text-4xl font-bold">
+            {score === null ? "—" : score}
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-fog">
+            Accuracy
+          </div>
+        </div>
+      </div>
+      <div className="min-w-0">
+        <div className="text-[11px] uppercase tracking-wider text-fog">
+          Quote accuracy
+        </div>
+        <div className="mt-1 text-lg font-semibold">{label}</div>
+        <div className="mt-1 text-xs text-fog">
+          Based on your last {Math.min(sampleCount, 10)} close-out
+          {sampleCount === 1 ? "" : "s"}. Score rises as your actual totals
+          track closer to what you quoted.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StreakBanner({ streak }: { streak: number }) {
+  if (streak === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-white/10 bg-steel/40 p-5">
+        <div className="text-[11px] uppercase tracking-wider text-fog">
+          Accuracy streak
+        </div>
+        <div className="mt-1 text-sm text-fog">
+          Close out a job within ±10% of quote to start a streak.
+        </div>
+      </div>
+    );
+  }
+
+  // Only emoji in the whole app, intentional per the Hooked spec.
+  const label =
+    streak >= 5
+      ? `${streak} in a row 🔥 — dialed in`
+      : streak === 3 || streak === 4
+      ? `${streak} in a row 🔥`
+      : streak === 2
+      ? "2 in a row — getting a feel for it"
+      : "Starting a streak — 1 accurate quote";
+
+  return (
+    <div
+      className="rounded-xl border border-moss/30 bg-moss/5 p-5"
+      aria-label={`Accuracy streak: ${streak}`}
+    >
+      <div className="text-[11px] uppercase tracking-wider text-fog">
+        Accuracy streak
+      </div>
+      <div className="mt-1 text-lg font-semibold text-chalk">{label}</div>
+      <div className="mt-1 text-xs text-fog">
+        Counts consecutive close-outs inside ±10%. Slips silently reset — no
+        streak-lost guilt here.
+      </div>
+    </div>
   );
 }
 

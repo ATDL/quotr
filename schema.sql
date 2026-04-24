@@ -285,6 +285,27 @@ from public.close_outs co
 join public.quotes q on q.id = co.quote_id;
 
 -- ============================================================================
+-- Migration: hook-layer columns (run after initial schema is in place)
+-- ============================================================================
+-- "watching_for" captures the user's hunch at quote time ("what could surprise
+-- me on this job?"). At close-out, "was_watching_correct" records whether the
+-- hunch was right. The pair powers the Hooked-model calibration loop without
+-- any new tables.
+--
+-- Safe to re-run; both use ADD COLUMN IF NOT EXISTS.
+-- ============================================================================
+alter table public.quotes
+  add column if not exists watching_for text;
+
+alter table public.close_outs
+  add column if not exists was_watching_correct boolean;
+
+comment on column public.quotes.watching_for is
+  'User-captured hunch at quote time about what might surprise them on this job.';
+comment on column public.close_outs.was_watching_correct is
+  'True if the user confirmed at close-out that their watching_for hunch was right.';
+
+-- ============================================================================
 -- Reconciliation helper (run manually if you ever suspect a drift)
 -- ============================================================================
 -- select u.id, u.credits_balance, coalesce(sum(l.delta), 0) as ledger_sum

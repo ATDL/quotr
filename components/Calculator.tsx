@@ -22,6 +22,7 @@ export default function Calculator({ saveAction }: Props = {}) {
   );
   const [customerName, setCustomerName] = useState<string>("");
   const [scope, setScope] = useState<string>("");
+  const [watchingFor, setWatchingFor] = useState<string>("");
   const [copied, setCopied] = useState(false);
 
   const { laborCents, materialsCents, markupCents, totalCents, hasAny } =
@@ -53,6 +54,7 @@ export default function Calculator({ saveAction }: Props = {}) {
     setMarkupPct("");
     setCustomerName("");
     setScope("");
+    setWatchingFor("");
     setCopied(false);
   }
 
@@ -198,6 +200,23 @@ export default function Calculator({ saveAction }: Props = {}) {
             onChange={(e) => setScope(e.target.value)}
           />
         </div>
+
+        <div className="md:col-span-2">
+          <label className="label" htmlFor="watchingFor">
+            What could surprise you on this job? — optional
+          </label>
+          <textarea
+            id="watchingFor"
+            className="input min-h-[60px] resize-none"
+            placeholder="e.g. drywall behind the panel might be rotted; drive is farther than it looks"
+            value={watchingFor}
+            onChange={(e) => setWatchingFor(e.target.value)}
+          />
+          <p className="mt-1 text-[11px] text-fog">
+            We&rsquo;ll ask you at close-out whether this was right. Builds
+            your instinct over time.
+          </p>
+        </div>
       </div>
 
       <details className="group mt-6 rounded-lg border border-safety/25 bg-safety/5 p-4">
@@ -277,6 +296,7 @@ export default function Calculator({ saveAction }: Props = {}) {
             <input type="hidden" name="markupPct" value={markupPct} />
             <input type="hidden" name="customerName" value={customerName} />
             <input type="hidden" name="scope" value={scope} />
+            <input type="hidden" name="watchingFor" value={watchingFor} />
             <button
               type="submit"
               disabled={!hasAny}
