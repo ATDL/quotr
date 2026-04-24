@@ -14,7 +14,7 @@ const config: Config = {
         chalk: "#F5F5F3",
         rust: "#C55B2E",
         safety: "#F5A524",
-        moss: "#2F855A",
+        moss: "#3FA373",
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],

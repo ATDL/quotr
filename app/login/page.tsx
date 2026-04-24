@@ -3,8 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import LoginForm from "./LoginForm";
 
 // Server component — redirects authenticated users before rendering the form.
-// This prevents the infinite loop: logged-in user → /login → sees form again.
-export default async function LoginPage() {
+// Also reads ?mode=signup so deep-links from pricing CTAs land on sign-up.
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: { mode?: string };
+}) {
   const supabase = createClient();
   const {
     data: { user },
@@ -12,5 +16,8 @@ export default async function LoginPage() {
 
   if (user) redirect("/dashboard");
 
-  return <LoginForm />;
+  const initialMode =
+    searchParams.mode === "signup" ? "sign-up" : "sign-in";
+
+  return <LoginForm initialMode={initialMode} />;
 }

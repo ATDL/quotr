@@ -2,6 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://quotr.vercel.app"
+  ),
   title: "Quotr — free quote calculator for contractors with profit tracking",
   description:
     "Quote fast, close the job out, see your real profit. Built for US tradespeople. Credit packs, no subscription. First close-out free.",
@@ -9,7 +12,7 @@ export const metadata: Metadata = {
     title: "Quotr — quote it, close it out, see if you made money",
     description:
       "Free quote calculator. Paid close-out shows quoted vs. actual, profit, variance. No subscription.",
-    url: "https://quotr.vercel.app",
+    url: "/",
     siteName: "Quotr",
     type: "website",
   },

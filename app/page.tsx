@@ -24,14 +24,23 @@ function Header() {
         <div className="h-7 w-7 rounded bg-rust" aria-hidden />
         <span className="text-lg font-bold tracking-tight">Quotr</span>
       </div>
-      <nav className="flex items-center gap-5 text-sm text-fog">
-        <a href="#pricing" className="hover:text-chalk">
+      <nav className="flex items-center gap-1 text-sm text-fog">
+        <a
+          href="#pricing"
+          className="rounded px-2 py-1 transition hover:bg-white/5 hover:text-chalk"
+        >
           Pricing
         </a>
-        <a href="#faq" className="hover:text-chalk">
+        <a
+          href="#faq"
+          className="rounded px-2 py-1 transition hover:bg-white/5 hover:text-chalk"
+        >
           FAQ
         </a>
-        <a href="/login" className="hover:text-chalk">
+        <a
+          href="/login"
+          className="rounded px-2 py-1 transition hover:bg-white/5 hover:text-chalk"
+        >
           Sign in
         </a>
       </nav>
@@ -65,48 +74,147 @@ function Hero() {
 }
 
 function HowItWorks() {
-  const steps = [
-    {
-      num: "1",
-      title: "Quote it",
-      body:
-        "Type in hours, materials, hourly rate. Quotr spits out a number you can give the customer in under 60 seconds.",
-      note: "Free. No account.",
-    },
-    {
-      num: "2",
-      title: "Close it out",
-      body:
-        "Job's done? Punch in actual hours and actual material cost. Add a one-line \u201Cwhat surprised me.\u201D Quotr compares quote to reality and shows profit.",
-      note: "One credit per close-out. First one on us.",
-    },
-    {
-      num: "3",
-      title: "See the pattern",
-      body:
-        "After a handful of close-outs, the dashboard shows which job types actually pay — and which ones to stop bidding. Your next quote gets smarter automatically.",
-      note: "No extra charge.",
-    },
-  ];
-
   return (
     <section className="mt-20">
       <h2 className="text-3xl font-bold tracking-tight">How it works</h2>
       <div className="mt-8 grid gap-4 md:grid-cols-3">
-        {steps.map((s) => (
-          <div key={s.num} className="card">
-            <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-full bg-rust font-bold">
-              {s.num}
-            </div>
-            <h3 className="text-lg font-semibold">{s.title}</h3>
-            <p className="mt-2 text-sm text-fog">{s.body}</p>
-            <p className="mt-3 text-xs uppercase tracking-wider text-moss">
-              {s.note}
-            </p>
-          </div>
-        ))}
+        <StepCard
+          num="1"
+          title="Quote it"
+          body="Type in hours, materials, hourly rate. Quotr spits out a number you can give the customer in under 60 seconds."
+          note="Free. No account."
+          noteTone="moss"
+        />
+        <StepCard
+          num="2"
+          title="Close it out"
+          body={
+            <>
+              Job&rsquo;s done? Punch in actual hours and actual material cost.
+              Add a one-line &ldquo;what surprised me.&rdquo; Quotr compares
+              quote to reality and shows profit.
+            </>
+          }
+          note="One credit per close-out. First one on us."
+          noteTone="safety"
+        >
+          <CloseOutMock />
+        </StepCard>
+        <StepCard
+          num="3"
+          title="See the pattern"
+          body="After a handful of close-outs, the dashboard shows which job types actually pay — and which ones to stop bidding. Your next quote gets smarter automatically."
+          note="No extra charge."
+          noteTone="moss"
+        >
+          <ProfitChartMock />
+        </StepCard>
       </div>
     </section>
+  );
+}
+
+function StepCard({
+  num,
+  title,
+  body,
+  note,
+  noteTone,
+  children,
+}: {
+  num: string;
+  title: string;
+  body: React.ReactNode;
+  note: string;
+  noteTone: "moss" | "safety";
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="card">
+      <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 font-bold text-chalk">
+        {num}
+      </div>
+      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="mt-2 text-sm text-fog">{body}</p>
+      {children}
+      <p
+        className={`mt-3 text-xs uppercase tracking-wider ${
+          noteTone === "safety" ? "text-safety" : "text-moss"
+        }`}
+      >
+        {note}
+      </p>
+    </div>
+  );
+}
+
+function CloseOutMock() {
+  return (
+    <div
+      className="mt-4 rounded-lg border border-safety/30 bg-ink p-4 font-mono text-xs"
+      aria-hidden
+    >
+      <div className="mb-2 text-[10px] uppercase tracking-wider text-fog">
+        Close-out · Mrs. Alvarez
+      </div>
+      <div className="flex justify-between">
+        <span className="text-fog">Quoted</span>
+        <span>$1,520</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-fog">Actual</span>
+        <span>$1,306</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-fog">Profit</span>
+        <span className="text-moss">+$214 · 14%</span>
+      </div>
+      <div className="mt-2 border-t border-white/10 pt-2 text-[11px] italic text-fog">
+        &ldquo;Driveway was 40 ft longer than I measured.&rdquo;
+      </div>
+    </div>
+  );
+}
+
+function ProfitChartMock() {
+  const rows: { name: string; pct: number; color: string }[] = [
+    { name: "Service calls", pct: 22, color: "bg-moss" },
+    { name: "Panel upgrades", pct: -8, color: "bg-rust" },
+    { name: "Remodels", pct: 14, color: "bg-moss" },
+  ];
+  const max = Math.max(...rows.map((r) => Math.abs(r.pct)));
+  return (
+    <div className="mt-4 space-y-2" aria-hidden>
+      {rows.map((r) => {
+        const widthPct = (Math.abs(r.pct) / max) * 45; // up to 45% of half-width
+        return (
+          <div key={r.name} className="flex items-center gap-2 text-xs">
+            <span className="w-28 shrink-0 truncate text-fog">{r.name}</span>
+            <div className="relative h-2 flex-1 rounded bg-white/5">
+              <div
+                className="absolute top-0 h-full w-px bg-white/20"
+                style={{ left: "50%" }}
+              />
+              <div
+                className={`absolute top-0 h-2 rounded ${r.color}`}
+                style={{
+                  width: `${widthPct}%`,
+                  left: r.pct < 0 ? `${50 - widthPct}%` : "50%",
+                }}
+              />
+            </div>
+            <span
+              className={`w-10 shrink-0 text-right font-mono ${
+                r.pct < 0 ? "text-rust" : "text-moss"
+              }`}
+            >
+              {r.pct > 0 ? "+" : ""}
+              {r.pct}%
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -131,6 +239,7 @@ function Pricing() {
           price="$79"
           credits="40 close-outs"
           perUnit="$1.98 per close-out"
+          savings="Save $0.92 per close-out vs. Starter"
           highlight
         />
       </div>
@@ -148,12 +257,14 @@ function PackCard({
   price,
   credits,
   perUnit,
+  savings,
   highlight = false,
 }: {
   name: string;
   price: string;
   credits: string;
   perUnit: string;
+  savings?: string;
   highlight?: boolean;
 }) {
   return (
@@ -171,7 +282,8 @@ function PackCard({
       <div className="mt-2 font-mono text-4xl font-bold">{price}</div>
       <div className="mt-1 text-sm text-fog">{credits}</div>
       <div className="mt-1 text-xs text-fog">{perUnit}</div>
-      <a href="/login" className="btn-primary mt-6 w-full">
+      {savings && <div className="mt-1 text-xs text-moss">{savings}</div>}
+      <a href="/login?mode=signup" className="btn-primary mt-6 w-full">
         Get started
       </a>
     </div>
@@ -179,22 +291,23 @@ function PackCard({
 }
 
 function FAQ() {
+  // Order matters: subscription-fatigue is the #1 objection — answer second.
   const faqs = [
     {
       q: "Is the calculator actually free?",
       a: "Yes. Quote as many jobs as you want, no account, no paywall. The paid part is the close-out feedback loop — and only if you find it useful.",
     },
     {
+      q: "Is this a subscription I have to cancel?",
+      a: "No. There is nothing to cancel. One-time pack purchase, credits never expire.",
+    },
+    {
       q: "What do I get with a close-out?",
-      a: "Per job: quoted total, actual total, profit dollars, profit percent, variance percent, and your one-line \u201Cwhat surprised me\u201D note. Across jobs: a dashboard that shows profit by job type.",
+      a: "Per job: quoted total, actual total, profit dollars, profit percent, variance percent, and your one-line “what surprised me” note. Across jobs: a dashboard that shows profit by job type.",
     },
     {
       q: "What happens when I run out of credits?",
       a: "Your data stays. You can still quote new jobs for free and view every past close-out. To close out a new one, buy another pack.",
-    },
-    {
-      q: "Is this a subscription I have to cancel?",
-      a: "No. There is nothing to cancel. One-time pack purchase, credits never expire.",
     },
     {
       q: "Can I use this on my phone on a job site?",
@@ -243,14 +356,23 @@ function Footer() {
     <footer className="mt-20 border-t border-white/10 pt-8 text-sm text-fog">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span>© {new Date().getFullYear()} Quotr</span>
-        <div className="flex gap-5">
-          <a href="/login" className="hover:text-chalk">
+        <div className="flex gap-1">
+          <a
+            href="/login"
+            className="rounded px-2 py-1 transition hover:bg-white/5 hover:text-chalk"
+          >
             Sign in
           </a>
-          <a href="#pricing" className="hover:text-chalk">
+          <a
+            href="#pricing"
+            className="rounded px-2 py-1 transition hover:bg-white/5 hover:text-chalk"
+          >
             Pricing
           </a>
-          <a href="mailto:hello@quotr.app" className="hover:text-chalk">
+          <a
+            href="mailto:hello@quotr.app"
+            className="rounded px-2 py-1 transition hover:bg-white/5 hover:text-chalk"
+          >
             Contact
           </a>
         </div>

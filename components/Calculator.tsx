@@ -3,21 +3,23 @@
 import { useMemo, useState } from "react";
 import { formatUSD, toCents } from "@/lib/utils/money";
 
-/**
- * Free quote calculator — the cold-traffic hook.
- *
- * No auth required. Stateless. If the user wants to save or close out a quote,
- * that flow kicks them into sign-in (handled elsewhere).
- */
 type Props = {
   saveAction?: (formData: FormData) => Promise<void>;
 };
 
 export default function Calculator({ saveAction }: Props = {}) {
-  const [hours, setHours] = useState<string>("");
-  const [rate, setRate] = useState<string>("");
-  const [materials, setMaterials] = useState<string>("");
-  const [markupPct, setMarkupPct] = useState<string>("");
+  // Landing page gets a worked example so the value is visible on first paint.
+  // Authenticated new-quote flow (saveAction present) starts empty.
+  const exampleMode = !saveAction;
+
+  const [hours, setHours] = useState<string>(exampleMode ? "8" : "");
+  const [rate, setRate] = useState<string>(exampleMode ? "95" : "");
+  const [materials, setMaterials] = useState<string>(
+    exampleMode ? "320" : ""
+  );
+  const [markupPct, setMarkupPct] = useState<string>(
+    exampleMode ? "15" : ""
+  );
   const [customerName, setCustomerName] = useState<string>("");
   const [scope, setScope] = useState<string>("");
   const [copied, setCopied] = useState(false);
@@ -44,7 +46,7 @@ export default function Calculator({ saveAction }: Props = {}) {
       };
     }, [hours, rate, materials, markupPct]);
 
-  function reset() {
+  function clearAll() {
     setHours("");
     setRate("");
     setMaterials("");
@@ -57,13 +59,10 @@ export default function Calculator({ saveAction }: Props = {}) {
   async function copyQuote() {
     // Customer-facing output — markup is NEVER shown as a line item.
     // We proportionally roll markup into labor and materials so the
-    // itemized lines sum to the total. This is how every pro quoting tool
-    // (Jobber, Housecall Pro, ServiceTitan) presents a quote: overhead
-    // baked into the rate, never called out.
+    // itemized lines sum to the total.
     const subtotal = laborCents + materialsCents;
     const ratio = subtotal > 0 ? totalCents / subtotal : 1;
     const displayLabor = Math.round(laborCents * ratio);
-    // Materials absorbs any rounding drift so the lines sum exactly to total.
     const displayMaterials = Math.max(0, totalCents - displayLabor);
 
     const lines = [
@@ -150,8 +149,14 @@ export default function Calculator({ saveAction }: Props = {}) {
         </div>
 
         <div>
-          <label className="label" htmlFor="markup">
-            Markup (%) — internal only
+          <label
+            className="label flex items-center justify-between gap-3"
+            htmlFor="markup"
+          >
+            <span>Markup (%)</span>
+            <span className="text-[10px] normal-case tracking-normal text-fog">
+              Internal only — rolled silently into total
+            </span>
           </label>
           <input
             id="markup"
@@ -163,11 +168,7 @@ export default function Calculator({ saveAction }: Props = {}) {
             placeholder="e.g. 15"
             value={markupPct}
             onChange={(e) => setMarkupPct(e.target.value)}
-            aria-describedby="markup-help"
           />
-          <p id="markup-help" className="mt-1 text-[11px] text-fog">
-            Never shown to the customer. Rolled silently into the total.
-          </p>
         </div>
 
         <div className="md:col-span-2">
@@ -241,6 +242,18 @@ export default function Calculator({ saveAction }: Props = {}) {
             {hasAny ? formatUSD(totalCents) : "—"}
           </span>
         </div>
+        <div className="mt-3 flex items-baseline justify-between border-t border-white/10 pt-3">
+          <span className="text-sm uppercase tracking-wider text-fog">
+            Customer sees
+          </span>
+          <span className="font-mono text-2xl text-chalk">
+            {hasAny ? formatUSD(totalCents) : "—"}
+          </span>
+        </div>
+        <div className="mt-1 text-[11px] text-fog">
+          Markup is rolled silently into the total. Breakdown above is yours
+          only.
+        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap gap-3">
@@ -253,10 +266,10 @@ export default function Calculator({ saveAction }: Props = {}) {
         >
           {copied ? "Copied!" : "Copy quote"}
         </button>
-        <button type="button" onClick={reset} className="btn-ghost">
-          Reset
+        <button type="button" onClick={clearAll} className="btn-ghost">
+          Clear
         </button>
-        {saveAction ? (
+        {saveAction && (
           <form action={saveAction}>
             <input type="hidden" name="hours" value={hours} />
             <input type="hidden" name="rate" value={rate} />
@@ -273,10 +286,6 @@ export default function Calculator({ saveAction }: Props = {}) {
               Save quote →
             </button>
           </form>
-        ) : (
-          <a href="/login" className="btn-ghost">
-            Save &amp; close out later
-          </a>
         )}
       </div>
 
@@ -285,11 +294,29 @@ export default function Calculator({ saveAction }: Props = {}) {
         baked silently into the total. Your internal breakdown above stays
         here.
       </p>
-      {!saveAction && (
-        <p className="mt-1 text-xs text-fog">
-          Close out this job later to see quoted vs. actual, profit, and
-          variance. First close-out is free.
-        </p>
+
+      {/* Promoted save CTA — landing page only, shown once the calc has values */}
+      {!saveAction && hasAny && (
+        <div className="mt-6 rounded-lg border border-safety/30 bg-safety/5 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-chalk">
+                Want to see if you actually made money?
+              </div>
+              <div className="mt-1 text-sm text-fog">
+                Save this quote. When the job&rsquo;s done, close it out and
+                we&rsquo;ll show quoted vs. actual, profit dollars, and profit
+                percent.
+              </div>
+            </div>
+            <a href="/login?mode=signup" className="btn-primary shrink-0">
+              Save quote →
+            </a>
+          </div>
+          <div className="mt-2 text-xs text-fog">
+            First close-out is free. No card to save.
+          </div>
+        </div>
       )}
     </div>
   );
