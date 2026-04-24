@@ -1,5 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { formatPct, formatUSD } from "@/lib/utils/money";
+import {
+  BADGES,
+  BADGE_ORDER,
+  computeUnlocked,
+  type BadgeId,
+} from "@/lib/badges";
 
 /**
  * My Jobs — the feedback loop, made visible.
@@ -22,6 +28,13 @@ export default async function DashboardHome() {
     .eq("status", "open")
     .order("created_at", { ascending: false })
     .limit(10);
+
+  // Milestones strip — needs was_watching_correct which isn't in my_jobs_feed.
+  // RLS scopes to the current user automatically.
+  const { data: closeOutsForBadges } = await supabase
+    .from("close_outs")
+    .select("computed_variance_pct, was_watching_correct");
+  const unlockedBadges = computeUnlocked(closeOutsForBadges ?? []);
 
   const hasJobs = (jobs?.length ?? 0) > 0;
   const hasOpen = (openQuotes?.length ?? 0) > 0;
@@ -81,6 +94,7 @@ export default async function DashboardHome() {
           <div className="space-y-6">
             <AccuracyRow jobs={jobs!} />
             <LastJobCard job={jobs![0]} />
+            <MilestonesStrip unlocked={unlockedBadges} />
             <SummaryBar jobs={jobs!} />
             <ByJobTypeCard jobs={jobs!} />
             <div className="overflow-x-auto rounded-xl border border-white/10">
@@ -408,6 +422,59 @@ function ByJobTypeCard({ jobs }: { jobs: Job[] }) {
         After 5+ jobs of a type, you can trust this signal. Consider dropping
         types that stay red.
       </p>
+    </section>
+  );
+}
+
+/**
+ * Milestones strip — badges computed from the user's close-outs, shown
+ * unlocked (gold) or locked (monochrome with hint). Hints are informational,
+ * not nags — spec requires no shame copy.
+ */
+function MilestonesStrip({ unlocked }: { unlocked: Set<BadgeId> }) {
+  return (
+    <section>
+      <h3 className="mb-3 text-xs uppercase tracking-wider text-fog">
+        Milestones
+      </h3>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {BADGE_ORDER.map((id) => {
+          const badge = BADGES[id];
+          const isUnlocked = unlocked.has(id);
+          return (
+            <div
+              key={id}
+              className={`group relative flex min-w-[160px] shrink-0 flex-col items-center rounded-lg border px-3 py-4 text-center transition ${
+                isUnlocked
+                  ? "border-badge-gold/40 bg-badge-gold/5"
+                  : "border-white/10 bg-steel/50"
+              }`}
+              title={isUnlocked ? badge.copy : badge.hint}
+            >
+              <div
+                className={`flex h-10 w-10 items-center justify-center rounded-full border text-lg ${
+                  isUnlocked
+                    ? "border-badge-gold/50 bg-badge-gold/10 text-badge-gold"
+                    : "border-white/10 bg-white/5 text-fog"
+                }`}
+                aria-hidden
+              >
+                {isUnlocked ? badge.icon : "—"}
+              </div>
+              <div
+                className={`mt-2 text-xs font-semibold ${
+                  isUnlocked ? "text-chalk" : "text-fog"
+                }`}
+              >
+                {badge.name}
+              </div>
+              <div className="mt-1 text-[10px] leading-snug text-fog">
+                {isUnlocked ? "Unlocked" : badge.hint}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

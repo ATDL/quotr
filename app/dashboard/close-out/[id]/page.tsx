@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { toCents } from "@/lib/utils/money";
+import { BADGE_ORDER, computeUnlocked } from "@/lib/badges";
 import CloseOutForm from "./CloseOutForm";
 
 export default async function CloseOutPage({
@@ -72,6 +73,14 @@ export default async function CloseOutPage({
 
     if ((p?.credits_balance ?? 0) < 1) redirect("/dashboard/credits");
 
+    // Badges: snapshot the user's existing close-outs BEFORE insert so we
+    // can diff against the post-insert set to find newly-unlocked badges.
+    const { data: priorCloseOuts } = await supabase
+      .from("close_outs")
+      .select("computed_variance_pct, was_watching_correct")
+      .eq("user_id", user.id);
+    const priorUnlocked = computeUnlocked(priorCloseOuts ?? []);
+
     const actualMaterialsCents = toCents(actualMaterials);
     const actualLaborCents = Math.round(actualHours * q.hourly_rate_cents);
     const actualTotalCents = actualLaborCents + actualMaterialsCents;
@@ -111,8 +120,21 @@ export default async function CloseOutPage({
       related_id: quoteId,
     });
 
+    // Diff unlocks to find which badges the user just earned.
+    const newUnlocked = computeUnlocked([
+      ...(priorCloseOuts ?? []),
+      {
+        computed_variance_pct: parseFloat(variancePct.toFixed(2)),
+        was_watching_correct: wasWatchingCorrect,
+      },
+    ]);
+    const newly = BADGE_ORDER.filter(
+      (id) => newUnlocked.has(id) && !priorUnlocked.has(id)
+    );
+    const badgeParam = newly.length > 0 ? `?badge=${newly[0]}` : "";
+
     // Redirect to the result screen — the feedback-loop payoff.
-    redirect(`/dashboard/close-out/${quoteId}/result`);
+    redirect(`/dashboard/close-out/${quoteId}/result${badgeParam}`);
   }
 
   return (

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatPct, formatUSD } from "@/lib/utils/money";
+import type { Badge } from "@/lib/badges";
 
 type Props = {
   quoteId: string;
@@ -22,6 +23,7 @@ type Props = {
   variancePct: number;
   creditsLeft: number;
   isFirstCloseOut: boolean;
+  unlockedBadge: Badge | null;
 };
 
 type Heat = {
@@ -144,6 +146,16 @@ export default function RevealScreen(p: Props) {
 
   const countEnabled = animate && stage >= 4;
   const displayVariance = useCountUp(p.variancePct, 1800, countEnabled);
+
+  // Badge modal opens after the reveal has fully played out. With reduced
+  // motion we still wait briefly so the number registers before the modal.
+  const [badgeModalOpen, setBadgeModalOpen] = useState(false);
+  useEffect(() => {
+    if (!p.unlockedBadge) return;
+    const delay = animate ? 3800 : 600;
+    const t = setTimeout(() => setBadgeModalOpen(true), delay);
+    return () => clearTimeout(t);
+  }, [p.unlockedBadge, animate]);
 
   // Haptic buzz on count start. Safari ignores; acceptable.
   useEffect(() => {
@@ -318,6 +330,7 @@ export default function RevealScreen(p: Props) {
         className={`flex flex-wrap gap-3 transition-opacity duration-500 ease-reveal ${subtle(7)}`}
       >
         <ShareButton
+          quoteId={p.quoteId}
           variancePct={p.variancePct}
           headline={heat.headline}
           takeaway={heat.takeaway}
@@ -330,6 +343,14 @@ export default function RevealScreen(p: Props) {
           New quote →
         </a>
       </div>
+
+      {p.unlockedBadge && badgeModalOpen && (
+        <BadgeUnlockModal
+          badge={p.unlockedBadge}
+          animate={animate}
+          onClose={() => setBadgeModalOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -358,40 +379,237 @@ function StatPill({
 }
 
 function ShareButton({
+  quoteId,
   variancePct,
   headline,
   takeaway,
   jobType,
 }: {
+  quoteId: string;
   variancePct: number;
   headline: string;
   takeaway: string;
   jobType: string | null;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [state, setState] = useState<"idle" | "working" | "done" | "error">(
+    "idle"
+  );
 
   async function onShare() {
-    const sign = variancePct > 0 ? "+" : variancePct < 0 ? "−" : "";
-    const pct = Math.abs(variancePct).toFixed(0);
-    const text = [
-      `Quotr close-out${jobType ? ` · ${jobType}` : ""}`,
-      `${headline} ${sign}${pct}%`,
-      takeaway,
-      "https://quotr.app",
-    ].join("\n");
+    setState("working");
     try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      const res = await fetch(`/api/share/${quoteId}`);
+      if (!res.ok) throw new Error("image fetch failed");
+      const blob = await res.blob();
+      const file = new File([blob], "quotr-close-out.png", {
+        type: "image/png",
+      });
+
+      // Prefer the native share sheet on mobile.
+      const navAny = navigator as Navigator & {
+        canShare?: (data: { files?: File[] }) => boolean;
+      };
+      if (navAny.canShare?.({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: "Quotr close-out",
+          text: `${headline} ${formatShareText(variancePct, takeaway, jobType)}`,
+        });
+        setState("done");
+        setTimeout(() => setState("idle"), 2000);
+        return;
+      }
+
+      // Desktop fallback: download.
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "quotr-close-out.png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setState("done");
+      setTimeout(() => setState("idle"), 2000);
     } catch {
-      /* ignore */
+      // Text fallback — always works, no image required.
+      try {
+        await navigator.clipboard.writeText(
+          formatShareText(variancePct, takeaway, jobType)
+        );
+        setState("done");
+        setTimeout(() => setState("idle"), 2000);
+      } catch {
+        setState("error");
+        setTimeout(() => setState("idle"), 2000);
+      }
     }
   }
 
+  const label =
+    state === "working"
+      ? "Preparing…"
+      : state === "done"
+      ? "Shared"
+      : state === "error"
+      ? "Try again"
+      : "Share this";
+
   return (
-    <button type="button" onClick={onShare} className="btn-primary flex-1">
-      {copied ? "Copied!" : "Share this"}
+    <button
+      type="button"
+      onClick={onShare}
+      disabled={state === "working"}
+      className="btn-primary flex-1"
+    >
+      {label}
     </button>
+  );
+}
+
+function formatShareText(
+  variancePct: number,
+  takeaway: string,
+  jobType: string | null
+) {
+  const sign = variancePct > 0 ? "+" : variancePct < 0 ? "−" : "";
+  const pct = Math.abs(variancePct).toFixed(0);
+  return [
+    `Quotr close-out${jobType ? ` · ${jobType}` : ""}`,
+    `${sign}${pct}% — ${takeaway}`,
+    "https://quotr.app",
+  ].join("\n");
+}
+
+function BadgeUnlockModal({
+  badge,
+  animate,
+  onClose,
+}: {
+  badge: Badge;
+  animate: boolean;
+  onClose: () => void;
+}) {
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    // Haptic: double-tap feels like an unlock.
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      try {
+        navigator.vibrate([40, 60, 40]);
+      } catch {
+        /* ignore */
+      }
+    }
+    closeBtnRef.current?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="badge-unlock-name"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-6 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-2xl border border-badge-gold/40 bg-steel p-6 text-center shadow-reveal"
+      >
+        <div className="relative mx-auto h-24 w-24">
+          <div
+            className={`flex h-24 w-24 items-center justify-center rounded-full border border-badge-gold/40 bg-badge-gold/10 text-3xl text-badge-gold ${
+              animate ? "badge-pop" : ""
+            }`}
+            aria-hidden
+          >
+            {badge.icon}
+          </div>
+          {animate && (
+            <div
+              className="pointer-events-none absolute inset-0 overflow-hidden rounded-full"
+              aria-hidden
+            >
+              <div className="badge-shimmer absolute inset-y-0 -left-full w-full" />
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 text-[11px] uppercase tracking-wider text-badge-gold">
+          Milestone unlocked
+        </div>
+        <h2
+          id="badge-unlock-name"
+          className="mt-1 text-xl font-bold tracking-tight"
+        >
+          {badge.name}
+        </h2>
+        <p className="mt-2 text-sm text-fog">{badge.copy}</p>
+
+        <button
+          ref={closeBtnRef}
+          type="button"
+          onClick={onClose}
+          className="btn-primary mt-6 w-full"
+        >
+          Nice
+        </button>
+      </div>
+
+      <style jsx>{`
+        @keyframes badge-pop-kf {
+          0% {
+            transform: scale(0);
+          }
+          60% {
+            transform: scale(1.1);
+          }
+          100% {
+            transform: scale(1);
+          }
+        }
+        .badge-pop {
+          animation: badge-pop-kf 500ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        @keyframes badge-shimmer-kf {
+          0% {
+            transform: translateX(0);
+            opacity: 0;
+          }
+          50% {
+            opacity: 0.9;
+          }
+          100% {
+            transform: translateX(300%);
+            opacity: 0;
+          }
+        }
+        .badge-shimmer {
+          background: linear-gradient(
+            100deg,
+            transparent 0%,
+            rgba(212, 165, 116, 0.6) 45%,
+            rgba(255, 255, 255, 0.8) 50%,
+            rgba(212, 165, 116, 0.6) 55%,
+            transparent 100%
+          );
+          animation: badge-shimmer-kf 1200ms cubic-bezier(0.2, 0.8, 0.2, 1)
+            200ms both;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .badge-pop,
+          .badge-shimmer {
+            animation: none;
+          }
+        }
+      `}</style>
+    </div>
   );
 }
 

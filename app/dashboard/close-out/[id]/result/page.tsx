@@ -1,11 +1,14 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { BADGES, isBadgeId } from "@/lib/badges";
 import RevealScreen from "./RevealScreen";
 
 export default async function CloseOutResultPage({
   params,
+  searchParams,
 }: {
   params: { id: string };
+  searchParams: { badge?: string };
 }) {
   const supabase = createClient();
 
@@ -52,6 +55,12 @@ export default async function CloseOutResultPage({
     .eq("id", user.id)
     .single();
 
+  // Optional ?badge=<id> signals a newly unlocked badge on the redirect
+  // that came from the close-out action. Validated before it's rendered.
+  const badgeParam = searchParams.badge;
+  const unlockedBadge =
+    badgeParam && isBadgeId(badgeParam) ? BADGES[badgeParam] : null;
+
   return (
     <RevealScreen
       quoteId={params.id}
@@ -72,6 +81,7 @@ export default async function CloseOutResultPage({
       variancePct={closeOut.computed_variance_pct}
       creditsLeft={profile?.credits_balance ?? 0}
       isFirstCloseOut={isFirstCloseOut}
+      unlockedBadge={unlockedBadge}
     />
   );
 }
