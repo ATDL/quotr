@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { formatPct, formatUSD } from "@/lib/utils/money";
 import type { Badge } from "@/lib/badges";
+import type { ActualLine, QuoteLine } from "@/lib/materials";
 
 type Props = {
   quoteId: string;
@@ -16,6 +17,8 @@ type Props = {
   actualHours: number;
   quotedMaterialsCents: number;
   actualMaterialsCents: number;
+  quotedLaborCents: number;
+  actualLaborCents: number;
   quotedTotalCents: number;
   actualTotalCents: number;
   profitCents: number;
@@ -24,6 +27,9 @@ type Props = {
   creditsLeft: number;
   isFirstCloseOut: boolean;
   unlockedBadge: Badge | null;
+  materialsItemized: boolean;
+  quoteLines: QuoteLine[];
+  actualLines: ActualLine[];
 };
 
 type Heat = {
@@ -269,6 +275,21 @@ export default function RevealScreen(p: Props) {
         <StatPill label="Credits left" value={String(p.creditsLeft)} />
       </div>
 
+      {/* Quoted-vs-actual breakdown — always shows labor/materials split,
+          per-line when the user opted in to itemization. */}
+      <div
+        className={`transition-opacity duration-500 ease-reveal ${subtle(6)}`}
+      >
+        <QuotedVsActual
+          quotedLaborCents={p.quotedLaborCents}
+          actualLaborCents={p.actualLaborCents}
+          quotedMaterialsCents={p.quotedMaterialsCents}
+          actualMaterialsCents={p.actualMaterialsCents}
+          itemized={p.materialsItemized}
+          actualLines={p.actualLines}
+        />
+      </div>
+
       {/* Were-you-right result callout */}
       {p.watchingFor && p.wasWatchingCorrect !== null && (
         <div
@@ -351,6 +372,168 @@ export default function RevealScreen(p: Props) {
           onClose={() => setBadgeModalOpen(false)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Always-on labor-vs-materials split. Shows per-line variance when the
+ * close-out was itemized, plus an adaptive attribution callout when a
+ * single line accounts for >60% of the materials variance.
+ */
+function QuotedVsActual({
+  quotedLaborCents,
+  actualLaborCents,
+  quotedMaterialsCents,
+  actualMaterialsCents,
+  itemized,
+  actualLines,
+}: {
+  quotedLaborCents: number;
+  actualLaborCents: number;
+  quotedMaterialsCents: number;
+  actualMaterialsCents: number;
+  itemized: boolean;
+  actualLines: ActualLine[];
+}) {
+  const laborDelta = actualLaborCents - quotedLaborCents;
+  const materialsDelta = actualMaterialsCents - quotedMaterialsCents;
+
+  // Find the dominant materials line, if any, driving variance.
+  let dominant: { name: string; delta: number } | null = null;
+  let dominantShare = 0;
+  if (itemized && Math.abs(materialsDelta) >= 500) {
+    for (const l of actualLines) {
+      const lineDelta = l.actual_cents - l.quoted_cents;
+      if (Math.abs(lineDelta) > Math.abs(dominant?.delta ?? 0)) {
+        dominant = {
+          name: l.name || (l.new_at_closeout ? "Surprise line" : "A line"),
+          delta: lineDelta,
+        };
+      }
+    }
+    if (dominant && materialsDelta !== 0) {
+      dominantShare = Math.abs(dominant.delta / materialsDelta);
+    }
+  }
+
+  const attribution =
+    dominant && dominantShare >= 0.6 && Math.abs(dominant.delta) >= 500
+      ? `Next time, check the ${dominant.name} price before you quote. It was ${Math.round(
+          dominantShare * 100
+        )}% of your materials variance here.`
+      : itemized && Math.abs(materialsDelta) >= 500
+      ? "Variance was spread across materials — not one specific line. The whole category needs a small buffer next time."
+      : null;
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-steel p-4">
+      <div className="mb-3 text-[11px] uppercase tracking-wider text-fog">
+        Quoted vs. actual
+      </div>
+
+      <SplitRow
+        label="Labor"
+        quoted={quotedLaborCents}
+        actual={actualLaborCents}
+        delta={laborDelta}
+      />
+      <SplitRow
+        label="Materials"
+        quoted={quotedMaterialsCents}
+        actual={actualMaterialsCents}
+        delta={materialsDelta}
+      />
+
+      {itemized && actualLines.length > 0 && (
+        <details className="group mt-3 border-t border-white/10 pt-3">
+          <summary className="cursor-pointer list-none text-xs text-fog hover:text-chalk">
+            <span className="mr-2 group-open:hidden">▸</span>
+            <span className="mr-2 hidden group-open:inline">▾</span>
+            Where materials changed
+          </summary>
+          <ul className="mt-3 space-y-1.5" role="list">
+            {actualLines.map((l) => {
+              const delta = l.actual_cents - l.quoted_cents;
+              const onTarget = Math.abs(delta) < 100 && !l.new_at_closeout;
+              const name = l.name || "—";
+              return (
+                <li
+                  key={l.id}
+                  className="flex items-baseline justify-between gap-2 text-sm"
+                >
+                  <span className="min-w-0 truncate text-fog">
+                    {l.new_at_closeout && (
+                      <span className="mr-1 text-heat-warn">✦</span>
+                    )}
+                    {name}
+                  </span>
+                  {onTarget ? (
+                    <span className="shrink-0 text-xs text-fog">on target</span>
+                  ) : (
+                    <span
+                      className={`shrink-0 font-mono text-xs ${
+                        delta > 0
+                          ? l.new_at_closeout
+                            ? "text-heat-warn"
+                            : "text-rust"
+                          : "text-moss"
+                      }`}
+                    >
+                      {delta > 0 ? "+" : ""}
+                      {formatUSD(delta)}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      )}
+
+      {attribution && (
+        <div className="mt-3 rounded-md border border-safety/25 bg-safety/5 p-3 text-xs text-chalk">
+          {attribution}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SplitRow({
+  label,
+  quoted,
+  actual,
+  delta,
+}: {
+  label: string;
+  quoted: number;
+  actual: number;
+  delta: number;
+}) {
+  const deltaText =
+    Math.abs(delta) < 100
+      ? "on target"
+      : `${delta > 0 ? "+" : ""}${formatUSD(delta)}`;
+  const deltaClass =
+    Math.abs(delta) < 100
+      ? "text-fog"
+      : delta > 0
+      ? "text-rust"
+      : "text-moss";
+  return (
+    <div className="flex items-baseline justify-between py-1.5 text-sm">
+      <span className="text-fog">{label}</span>
+      <div className="flex items-baseline gap-3">
+        <span className="font-mono text-xs text-fog">
+          {formatUSD(quoted)}
+        </span>
+        <span className="text-fog">→</span>
+        <span className="font-mono text-chalk">{formatUSD(actual)}</span>
+        <span className={`w-24 text-right font-mono text-xs ${deltaClass}`}>
+          {deltaText}
+        </span>
+      </div>
     </div>
   );
 }

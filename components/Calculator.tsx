@@ -1,11 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { formatUSD, toCents } from "@/lib/utils/money";
+import {
+  formatWholeDollars,
+  padLabel,
+  type QuoteLine,
+} from "@/lib/materials";
 
 type Props = {
   saveAction?: (formData: FormData) => Promise<void>;
 };
+
+function newLineId(): string {
+  // Modern browsers + Node 19+ have crypto.randomUUID. Fall back to a
+  // timestamped random if an older runtime ever hits this path.
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `line_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
 
 export default function Calculator({ saveAction }: Props = {}) {
   // Landing page gets a worked example so the value is visible on first paint.
@@ -25,15 +39,22 @@ export default function Calculator({ saveAction }: Props = {}) {
   const [watchingFor, setWatchingFor] = useState<string>("");
   const [copied, setCopied] = useState(false);
 
+  // Itemized materials — default is single-field (unchanged UX).
+  const [materialsItemized, setMaterialsItemized] = useState(false);
+  const [materialsLines, setMaterialsLines] = useState<QuoteLine[]>([]);
+
   const { laborCents, materialsCents, markupCents, totalCents, hasAny } =
     useMemo(() => {
       const h = parseFloat(hours) || 0;
       const r = parseFloat(rate) || 0;
-      const m = parseFloat(materials) || 0;
+      const singleMaterials = parseFloat(materials) || 0;
       const mk = parseFloat(markupPct) || 0;
 
       const laborCents = toCents(h * r);
-      const materialsCents = toCents(m);
+      const linesSum = materialsLines.reduce((s, l) => s + l.cost_cents, 0);
+      const materialsCents = materialsItemized
+        ? linesSum
+        : toCents(singleMaterials);
       const subtotal = laborCents + materialsCents;
       const markupCents = Math.round(subtotal * (mk / 100));
       const totalCents = subtotal + markupCents;
@@ -43,9 +64,9 @@ export default function Calculator({ saveAction }: Props = {}) {
         materialsCents,
         markupCents,
         totalCents,
-        hasAny: h > 0 || r > 0 || m > 0,
+        hasAny: h > 0 || r > 0 || materialsCents > 0,
       };
-    }, [hours, rate, materials, markupPct]);
+    }, [hours, rate, materials, markupPct, materialsItemized, materialsLines]);
 
   function clearAll() {
     setHours("");
@@ -55,33 +76,104 @@ export default function Calculator({ saveAction }: Props = {}) {
     setCustomerName("");
     setScope("");
     setWatchingFor("");
+    setMaterialsItemized(false);
+    setMaterialsLines([]);
     setCopied(false);
+  }
+
+  function toggleItemize() {
+    if (materialsItemized) {
+      // Collapse itemized → single total
+      const sum = materialsLines.reduce((s, l) => s + l.cost_cents, 0);
+      setMaterials(sum > 0 ? String(sum / 100) : "");
+      setMaterialsLines([]);
+      setMaterialsItemized(false);
+      return;
+    }
+    // Expanding: seed the first line with the existing single-field value
+    // (if any) so the user never loses data.
+    const m = parseFloat(materials) || 0;
+    if (m > 0) {
+      setMaterialsLines([
+        {
+          id: newLineId(),
+          name: "Materials",
+          cost_cents: toCents(m),
+          sort: 0,
+        },
+      ]);
+    }
+    setMaterials("");
+    setMaterialsItemized(true);
   }
 
   async function copyQuote() {
     // Customer-facing output — markup is NEVER shown as a line item.
-    // We proportionally roll markup into labor and materials so the
-    // itemized lines sum to the total.
+    // Proportionally roll markup into each visible line.
     const subtotal = laborCents + materialsCents;
     const ratio = subtotal > 0 ? totalCents / subtotal : 1;
-    const displayLabor = Math.round(laborCents * ratio);
-    const displayMaterials = Math.max(0, totalCents - displayLabor);
 
-    const lines = [
+    const header = [
       customerName ? `Quote for ${customerName}` : `Quote`,
       scope ? `Scope: ${scope}` : null,
       "",
-      displayLabor > 0 ? `Labor: ${formatUSD(displayLabor)}` : null,
-      displayMaterials > 0
-        ? `Materials: ${formatUSD(displayMaterials)}`
-        : null,
-      `Total: ${formatUSD(totalCents)}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    ].filter(Boolean);
+
+    let body: string[];
+
+    if (materialsItemized && materialsLines.length > 0) {
+      // Itemized path.
+      const rawLines: { name: string; cents: number }[] = [];
+      const displayLabor = Math.round(laborCents * ratio);
+      if (displayLabor > 0) {
+        const h = parseFloat(hours) || 0;
+        rawLines.push({
+          name: h > 0 ? `Labor (${h} hrs)` : "Labor",
+          cents: displayLabor,
+        });
+      }
+      materialsLines.forEach((l, i) => {
+        const cents = Math.round(l.cost_cents * ratio);
+        if (cents <= 0) return; // omit zero-cost lines from customer view
+        const name = l.name.trim() || `Materials item ${i + 1}`;
+        rawLines.push({ name, cents });
+      });
+
+      // Spec: max 8 lines in customer view. Collapse the tail.
+      let lineView = rawLines;
+      if (rawLines.length > 8) {
+        const keep = rawLines.slice(0, 7);
+        const tail = rawLines.slice(7);
+        const tailSum = tail.reduce((s, r) => s + r.cents, 0);
+        lineView = [...keep, { name: "Fittings & misc", cents: tailSum }];
+      }
+
+      // Align to widest label (min 16 per spec) for monospace rendering.
+      const width = Math.max(16, ...lineView.map((r) => r.name.length + 1));
+      const ruleWidth = width + 10;
+
+      body = [
+        ...lineView.map(
+          (r) => `${padLabel(r.name + ":", width)}${formatWholeDollars(r.cents)}`
+        ),
+        "─".repeat(ruleWidth),
+        `${padLabel("Total:", width)}${formatWholeDollars(totalCents)}`,
+      ];
+    } else {
+      // Single-line path — unchanged shape.
+      const displayLabor = Math.round(laborCents * ratio);
+      const displayMaterials = Math.max(0, totalCents - displayLabor);
+      body = [
+        displayLabor > 0 ? `Labor: ${formatUSD(displayLabor)}` : "",
+        displayMaterials > 0 ? `Materials: ${formatUSD(displayMaterials)}` : "",
+        `Total: ${formatUSD(totalCents)}`,
+      ].filter(Boolean);
+    }
+
+    const text = [...header, ...body].join("\n");
 
     try {
-      await navigator.clipboard.writeText(lines);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -133,20 +225,14 @@ export default function Calculator({ saveAction }: Props = {}) {
           />
         </div>
 
-        <div>
-          <label className="label" htmlFor="materials">
-            Materials cost ($)
-          </label>
-          <input
-            id="materials"
-            className="input"
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="1"
-            placeholder="e.g. 320"
-            value={materials}
-            onChange={(e) => setMaterials(e.target.value)}
+        <div className={materialsItemized ? "md:col-span-2" : ""}>
+          <MaterialsField
+            itemized={materialsItemized}
+            single={materials}
+            onSingleChange={setMaterials}
+            lines={materialsLines}
+            onLinesChange={setMaterialsLines}
+            onToggle={toggleItemize}
           />
         </div>
 
@@ -297,6 +383,16 @@ export default function Calculator({ saveAction }: Props = {}) {
             <input type="hidden" name="customerName" value={customerName} />
             <input type="hidden" name="scope" value={scope} />
             <input type="hidden" name="watchingFor" value={watchingFor} />
+            <input
+              type="hidden"
+              name="materialsItemized"
+              value={materialsItemized ? "true" : "false"}
+            />
+            <input
+              type="hidden"
+              name="materialsLines"
+              value={JSON.stringify(materialsLines)}
+            />
             <button
               type="submit"
               disabled={!hasAny}
@@ -347,6 +443,231 @@ function Row({ label, cents }: { label: string; cents: number }) {
     <div className="flex items-baseline justify-between">
       <span className="text-fog">{label}</span>
       <span className="font-mono">{cents === 0 ? "—" : formatUSD(cents)}</span>
+    </div>
+  );
+}
+
+type MaterialsFieldProps = {
+  itemized: boolean;
+  single: string;
+  onSingleChange: (v: string) => void;
+  lines: QuoteLine[];
+  onLinesChange: (lines: QuoteLine[]) => void;
+  onToggle: () => void;
+};
+
+function MaterialsField({
+  itemized,
+  single,
+  onSingleChange,
+  lines,
+  onLinesChange,
+  onToggle,
+}: MaterialsFieldProps) {
+  const [draftName, setDraftName] = useState("");
+  const [draftCost, setDraftCost] = useState("");
+  const draftNameRef = useRef<HTMLInputElement>(null);
+  const draftCostRef = useRef<HTMLInputElement>(null);
+
+  const linesSumCents = lines.reduce((s, l) => s + l.cost_cents, 0);
+
+  function commitDraft() {
+    const name = draftName.trim();
+    const costNum = parseFloat(draftCost) || 0;
+    if (!name && costNum === 0) return;
+    onLinesChange([
+      ...lines,
+      {
+        id: newLineId(),
+        name,
+        cost_cents: toCents(costNum),
+        sort: lines.length,
+      },
+    ]);
+    setDraftName("");
+    setDraftCost("");
+    draftNameRef.current?.focus();
+  }
+
+  function updateLine(idx: number, patch: Partial<QuoteLine>) {
+    onLinesChange(lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+  }
+
+  function removeLine(idx: number) {
+    onLinesChange(
+      lines
+        .filter((_, i) => i !== idx)
+        .map((l, i) => ({ ...l, sort: i }))
+    );
+  }
+
+  function onDraftKeyDown(
+    e: React.KeyboardEvent<HTMLInputElement>,
+    field: "name" | "cost"
+  ) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (field === "name") {
+        draftCostRef.current?.focus();
+      } else {
+        commitDraft();
+      }
+    }
+  }
+
+  if (!itemized) {
+    return (
+      <>
+        <label
+          className="label flex items-center justify-between gap-3"
+          htmlFor="materials"
+        >
+          <span>Materials cost ($)</span>
+          <button
+            type="button"
+            onClick={onToggle}
+            className="text-[10px] normal-case tracking-normal text-fog underline-offset-2 hover:text-chalk hover:underline"
+            aria-expanded="false"
+            aria-controls="materials-editor"
+          >
+            + Itemize
+          </button>
+        </label>
+        <input
+          id="materials"
+          className="input"
+          type="number"
+          inputMode="decimal"
+          min="0"
+          step="1"
+          placeholder="e.g. 320"
+          value={single}
+          onChange={(e) => onSingleChange(e.target.value)}
+        />
+      </>
+    );
+  }
+
+  return (
+    <div id="materials-editor">
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <span className="label mb-0">Materials</span>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="text-[10px] normal-case tracking-normal text-fog underline-offset-2 hover:text-chalk hover:underline"
+        >
+          Collapse to single line
+        </button>
+      </div>
+
+      {lines.length === 0 && (
+        <p className="mb-2 rounded-lg border border-dashed border-white/10 p-3 text-xs text-fog">
+          No lines yet. Add items below, or collapse back to a single total.
+        </p>
+      )}
+
+      {lines.length > 0 && (
+        <ul className="space-y-2" role="list">
+          {lines.map((line, i) => (
+            <li
+              key={line.id}
+              className="flex items-center gap-2 rounded-lg border border-white/10 bg-ink p-2"
+            >
+              <input
+                type="text"
+                className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-chalk outline-none placeholder:text-fog/60"
+                placeholder="Item (e.g. Breaker box)"
+                value={line.name}
+                onChange={(e) => updateLine(i, { name: e.target.value })}
+                aria-label={`Line ${i + 1} item name`}
+              />
+              <div className="flex items-center gap-1 rounded bg-steel px-2 py-2">
+                <span className="text-xs text-fog">$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="1"
+                  className="w-20 bg-transparent text-right font-mono text-sm text-chalk outline-none"
+                  placeholder="0"
+                  value={line.cost_cents === 0 ? "" : line.cost_cents / 100}
+                  onChange={(e) =>
+                    updateLine(i, {
+                      cost_cents: toCents(parseFloat(e.target.value) || 0),
+                    })
+                  }
+                  aria-label={`Line ${i + 1} cost`}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => removeLine(i)}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded text-fog transition hover:bg-white/5 hover:text-rust"
+                aria-label={`Remove line: ${line.name || "untitled"}`}
+              >
+                <span aria-hidden>×</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Quick-add row */}
+      <div className="mt-2 flex items-center gap-2 rounded-lg border border-dashed border-white/15 p-2">
+        <input
+          ref={draftNameRef}
+          type="text"
+          className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-chalk outline-none placeholder:text-fog/60"
+          placeholder="+ Add item…"
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onKeyDown={(e) => onDraftKeyDown(e, "name")}
+          aria-label="New line item name"
+        />
+        <div className="flex items-center gap-1 rounded bg-steel/60 px-2 py-2">
+          <span className="text-xs text-fog">$</span>
+          <input
+            ref={draftCostRef}
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="1"
+            className="w-20 bg-transparent text-right font-mono text-sm text-chalk outline-none"
+            placeholder="0"
+            value={draftCost}
+            onChange={(e) => setDraftCost(e.target.value)}
+            onKeyDown={(e) => onDraftKeyDown(e, "cost")}
+            aria-label="New line cost"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={commitDraft}
+          disabled={!draftName.trim() && !draftCost}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded bg-safety/10 text-lg font-bold text-safety transition hover:bg-safety/20 disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label="Add line"
+        >
+          <span aria-hidden>+</span>
+        </button>
+      </div>
+
+      <div className="mt-3 flex items-baseline justify-between border-t border-white/10 pt-3">
+        <span className="text-xs uppercase tracking-wider text-fog">
+          Materials subtotal · {lines.length} item
+          {lines.length === 1 ? "" : "s"}
+        </span>
+        <span className="font-mono text-lg text-chalk">
+          {linesSumCents === 0 ? "—" : formatUSD(linesSumCents)}
+        </span>
+      </div>
+
+      {lines.length >= 20 && (
+        <p className="mt-2 text-[11px] text-fog">
+          That&rsquo;s a lot of lines — is this a remodel? Consider collapsing
+          similar items into categories.
+        </p>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { BADGES, isBadgeId } from "@/lib/badges";
+import { parseActualLines, parseQuoteLines } from "@/lib/materials";
 import RevealScreen from "./RevealScreen";
 
 export default async function CloseOutResultPage({
@@ -20,7 +21,7 @@ export default async function CloseOutResultPage({
   const { data: quote } = await supabase
     .from("quotes")
     .select(
-      "customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents"
+      "customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, materials_itemized, materials_lines"
     )
     .eq("id", params.id)
     .single();
@@ -28,7 +29,7 @@ export default async function CloseOutResultPage({
   const { data: closeOut } = await supabase
     .from("close_outs")
     .select(
-      "actual_hours, actual_materials_cents, surprise_note, job_type, was_watching_correct, computed_profit_cents, computed_profit_pct, computed_variance_pct"
+      "actual_hours, actual_materials_cents, surprise_note, job_type, was_watching_correct, computed_profit_cents, computed_profit_pct, computed_variance_pct, actual_materials_itemized, actual_materials_lines"
     )
     .eq("quote_id", params.id)
     .single();
@@ -36,9 +37,13 @@ export default async function CloseOutResultPage({
   if (!quote || !closeOut) notFound();
 
   // Derived values computed server-side so the client doesn't re-compute math.
-  const actualTotalCents =
-    Math.round(closeOut.actual_hours * quote.hourly_rate_cents) +
-    closeOut.actual_materials_cents;
+  const quotedLaborCents = Math.round(
+    quote.quoted_hours * quote.hourly_rate_cents
+  );
+  const actualLaborCents = Math.round(
+    closeOut.actual_hours * quote.hourly_rate_cents
+  );
+  const actualTotalCents = actualLaborCents + closeOut.actual_materials_cents;
 
   // Is this the user's very first close-out? Powers the onboarding flourish.
   const { count } = await supabase
@@ -82,6 +87,14 @@ export default async function CloseOutResultPage({
       creditsLeft={profile?.credits_balance ?? 0}
       isFirstCloseOut={isFirstCloseOut}
       unlockedBadge={unlockedBadge}
+      quotedLaborCents={quotedLaborCents}
+      actualLaborCents={actualLaborCents}
+      materialsItemized={
+        (quote.materials_itemized ?? false) &&
+        (closeOut.actual_materials_itemized ?? false)
+      }
+      quoteLines={parseQuoteLines(quote.materials_lines)}
+      actualLines={parseActualLines(closeOut.actual_materials_lines)}
     />
   );
 }

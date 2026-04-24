@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Calculator from "@/components/Calculator";
 import { toCents } from "@/lib/utils/money";
+import { parseQuoteLines } from "@/lib/materials";
 
 async function saveQuote(formData: FormData) {
   "use server";
@@ -21,9 +22,17 @@ async function saveQuote(formData: FormData) {
   const scope = ((formData.get("scope") as string) || "").trim() || null;
   const watchingFor =
     ((formData.get("watchingFor") as string) || "").trim() || null;
+  const materialsItemized =
+    formData.get("materialsItemized") === "true";
+  const materialsLines = materialsItemized
+    ? parseQuoteLines(formData.get("materialsLines"))
+    : [];
 
   const laborCents = toCents(hours * rate);
-  const materialsCents = toCents(materials);
+  // Invariant: when itemized, the cached cents MUST equal the line sum.
+  const materialsCents = materialsItemized
+    ? materialsLines.reduce((s, l) => s + l.cost_cents, 0)
+    : toCents(materials);
   const subtotal = laborCents + materialsCents;
   const markupCents = Math.round(subtotal * (markupPct / 100));
   const totalCents = subtotal + markupCents;
@@ -37,6 +46,8 @@ async function saveQuote(formData: FormData) {
     quoted_materials_cents: materialsCents,
     hourly_rate_cents: toCents(rate),
     quoted_total_cents: totalCents,
+    materials_itemized: materialsItemized,
+    materials_lines: materialsLines,
   });
 
   redirect("/dashboard");

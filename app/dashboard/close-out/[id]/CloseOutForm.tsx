@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { formatPct, formatUSD, toCents } from "@/lib/utils/money";
+import type { ActualLine, QuoteLine } from "@/lib/materials";
 
 type Quote = {
   id: string;
@@ -12,6 +13,8 @@ type Quote = {
   quoted_materials_cents: number;
   hourly_rate_cents: number;
   quoted_total_cents: number;
+  materials_itemized: boolean;
+  materials_lines: QuoteLine[];
 };
 
 type Mode = "new" | "edit";
@@ -22,7 +25,28 @@ type Defaults = {
   jobType: string | null;
   surpriseNote: string | null;
   wasWatchingCorrect?: boolean | null;
+  actualMaterialsItemized?: boolean;
+  actualMaterialsLines?: ActualLine[];
 };
+
+function newLineId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `line_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+function seedActualsFromQuote(lines: QuoteLine[]): ActualLine[] {
+  return lines
+    .slice()
+    .sort((a, b) => a.sort - b.sort)
+    .map((l) => ({
+      id: l.id,
+      name: l.name,
+      quoted_cents: l.cost_cents,
+      actual_cents: l.cost_cents, // pre-fill with quoted; user edits the ones that differ
+    }));
+}
 
 type Props = {
   quote: Quote;
@@ -56,12 +80,26 @@ export default function CloseOutForm({
     defaults?.wasWatchingCorrect ?? null
   );
 
+  // Itemized actuals — default: mirror the quote's itemization state.
+  const [actualItemized, setActualItemized] = useState<boolean>(
+    defaults?.actualMaterialsItemized ?? quote.materials_itemized
+  );
+  const [actualLines, setActualLines] = useState<ActualLine[]>(
+    defaults?.actualMaterialsLines &&
+      defaults.actualMaterialsLines.length > 0
+      ? defaults.actualMaterialsLines
+      : quote.materials_itemized
+      ? seedActualsFromQuote(quote.materials_lines ?? [])
+      : []
+  );
+
   const { actualTotalCents, profitCents, profitPct, variancePct } =
     useMemo(() => {
       const h = parseFloat(actualHours) || 0;
-      const m = parseFloat(actualMaterials) || 0;
       const laborCents = Math.round(h * quote.hourly_rate_cents);
-      const materialsCents = toCents(m);
+      const materialsCents = actualItemized
+        ? actualLines.reduce((s, l) => s + l.actual_cents, 0)
+        : toCents(parseFloat(actualMaterials) || 0);
       const actualTotalCents = laborCents + materialsCents;
       const profitCents = quote.quoted_total_cents - actualTotalCents;
       const profitPct =
@@ -75,7 +113,7 @@ export default function CloseOutForm({
             100
           : 0;
       return { actualTotalCents, profitCents, profitPct, variancePct };
-    }, [actualHours, actualMaterials, quote]);
+    }, [actualHours, actualMaterials, actualItemized, actualLines, quote]);
 
   // Paywall only applies to new close-outs — editing never debits a credit.
   if (!isEdit && credits < 1) {
@@ -213,27 +251,74 @@ export default function CloseOutForm({
           />
         </div>
 
-        <div>
-          <label className="label" htmlFor="actualMaterials">
-            Actual materials cost ($)
-          </label>
-          <input
-            id="actualMaterials"
-            name="actualMaterials"
-            className="input"
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="1"
-            value={actualMaterials}
-            onChange={(e) => setActualMaterials(e.target.value)}
-            required
+        {actualItemized ? (
+          <ActualMaterialsField
+            lines={actualLines}
+            onLinesChange={setActualLines}
+            onCollapse={() => {
+              // Collapse to single-input: preserve the summed dollar amount.
+              const sumCents = actualLines.reduce(
+                (s, l) => s + l.actual_cents,
+                0
+              );
+              setActualMaterials(sumCents > 0 ? String(sumCents / 100) : "");
+              setActualLines([]);
+              setActualItemized(false);
+            }}
           />
-          <p className="mt-1 text-[11px] text-fog">
-            Total across everything — glue, nails, lumber, etc. Quotr tracks
-            the total so your profit math stays clean.
-          </p>
-        </div>
+        ) : (
+          <div>
+            <label
+              className="label flex items-center justify-between gap-3"
+              htmlFor="actualMaterials"
+            >
+              <span>Actual materials cost ($)</span>
+              {quote.materials_itemized && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActualItemized(true);
+                    if (actualLines.length === 0) {
+                      setActualLines(
+                        seedActualsFromQuote(quote.materials_lines ?? [])
+                      );
+                    }
+                  }}
+                  className="text-[10px] normal-case tracking-normal text-fog underline-offset-2 hover:text-chalk hover:underline"
+                >
+                  + Itemize actuals
+                </button>
+              )}
+            </label>
+            <input
+              id="actualMaterials"
+              name="actualMaterials"
+              className="input"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="1"
+              value={actualMaterials}
+              onChange={(e) => setActualMaterials(e.target.value)}
+              required
+            />
+            <p className="mt-1 text-[11px] text-fog">
+              Total across everything — glue, nails, lumber, etc. Quotr tracks
+              the total so your profit math stays clean.
+            </p>
+          </div>
+        )}
+
+        <input
+          type="hidden"
+          name="actualMaterialsItemized"
+          value={actualItemized ? "true" : "false"}
+        />
+        <input
+          type="hidden"
+          name="actualMaterialsLines"
+          value={JSON.stringify(actualLines)}
+        />
 
         <div>
           <label className="label" htmlFor="jobType">
@@ -339,6 +424,186 @@ export default function CloseOutForm({
           </p>
         )}
       </form>
+    </div>
+  );
+}
+
+function ActualMaterialsField({
+  lines,
+  onLinesChange,
+  onCollapse,
+}: {
+  lines: ActualLine[];
+  onLinesChange: (lines: ActualLine[]) => void;
+  onCollapse: () => void;
+}) {
+  const allSameAsQuoted = lines.every(
+    (l) => l.actual_cents === l.quoted_cents
+  );
+
+  function sameAsAll() {
+    onLinesChange(
+      lines.map((l) => ({ ...l, actual_cents: l.quoted_cents }))
+    );
+  }
+
+  function updateLine(idx: number, patch: Partial<ActualLine>) {
+    onLinesChange(lines.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+  }
+
+  function addSurpriseLine() {
+    onLinesChange([
+      ...lines,
+      {
+        id: newLineId(),
+        name: "",
+        quoted_cents: 0,
+        actual_cents: 0,
+        new_at_closeout: true,
+      },
+    ]);
+  }
+
+  function removeLine(idx: number) {
+    onLinesChange(lines.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="label mb-0">Actual materials</span>
+        <button
+          type="button"
+          onClick={onCollapse}
+          className="text-[10px] normal-case tracking-normal text-fog underline-offset-2 hover:text-chalk hover:underline"
+        >
+          Report as one total
+        </button>
+      </div>
+
+      <button
+        type="button"
+        onClick={sameAsAll}
+        disabled={allSameAsQuoted || lines.length === 0}
+        className="btn-ghost mb-3 w-full text-sm"
+      >
+        {allSameAsQuoted
+          ? "✓ All actuals match quote"
+          : "Same as quoted for all materials"}
+      </button>
+
+      <ul className="space-y-2" role="list">
+        {lines.map((line, i) => {
+          const matches = line.actual_cents === line.quoted_cents;
+          const diff = line.actual_cents - line.quoted_cents;
+          return (
+            <li
+              key={line.id}
+              className={`rounded-lg border p-3 ${
+                line.new_at_closeout
+                  ? "border-safety/30 bg-safety/5"
+                  : "border-white/10 bg-ink"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  {line.new_at_closeout ? (
+                    <input
+                      type="text"
+                      className="w-full bg-transparent text-sm font-semibold text-chalk outline-none placeholder:text-fog/60"
+                      placeholder="Surprise line (e.g. replacement weatherhead)"
+                      value={line.name}
+                      onChange={(e) =>
+                        updateLine(i, { name: e.target.value })
+                      }
+                      aria-label={`Surprise line ${i + 1} name`}
+                    />
+                  ) : (
+                    <div className="truncate text-sm font-semibold text-chalk">
+                      {line.name || `Line ${i + 1}`}
+                    </div>
+                  )}
+                  <div className="mt-1 text-[11px] text-fog">
+                    {line.new_at_closeout
+                      ? "New — wasn't in the original quote"
+                      : `Quoted ${formatUSD(line.quoted_cents)}`}
+                  </div>
+                </div>
+                {line.new_at_closeout && (
+                  <button
+                    type="button"
+                    onClick={() => removeLine(i)}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-fog transition hover:bg-white/5 hover:text-rust"
+                    aria-label={`Remove surprise line ${i + 1}`}
+                  >
+                    <span aria-hidden>×</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-3 flex items-center gap-2">
+                <div className="flex flex-1 items-center gap-1 rounded bg-steel px-2 py-2">
+                  <span className="text-xs text-fog">Actual $</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="1"
+                    className="w-full min-w-0 bg-transparent text-right font-mono text-sm text-chalk outline-none"
+                    value={line.actual_cents === 0 ? "" : line.actual_cents / 100}
+                    onChange={(e) =>
+                      updateLine(i, {
+                        actual_cents: toCents(
+                          parseFloat(e.target.value) || 0
+                        ),
+                      })
+                    }
+                    aria-label={`${line.name || `Line ${i + 1}`} actual cost`}
+                  />
+                </div>
+                {!line.new_at_closeout && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateLine(i, { actual_cents: line.quoted_cents })
+                    }
+                    disabled={matches}
+                    className="shrink-0 rounded border border-white/15 px-3 py-2 text-xs text-fog transition hover:border-white/30 hover:text-chalk disabled:cursor-not-allowed disabled:opacity-40"
+                    title="Set actual = quoted for this line"
+                  >
+                    Same
+                  </button>
+                )}
+              </div>
+
+              {!matches && !line.new_at_closeout && (
+                <div
+                  className={`mt-2 text-right font-mono text-[11px] ${
+                    diff > 0 ? "text-rust" : "text-moss"
+                  }`}
+                >
+                  {diff > 0 ? "+" : ""}
+                  {formatUSD(diff)}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      <button
+        type="button"
+        onClick={addSurpriseLine}
+        className="mt-2 w-full rounded-lg border border-dashed border-white/15 px-3 py-3 text-sm text-fog transition hover:border-white/30 hover:text-chalk"
+      >
+        + Add surprise line
+      </button>
+
+      <p className="mt-2 text-[11px] text-fog">
+        Lines pre-fill with what you quoted — tap &ldquo;Same&rdquo; to confirm
+        or type a new number. Surprise lines capture materials that weren&rsquo;t
+        in the original quote.
+      </p>
     </div>
   );
 }

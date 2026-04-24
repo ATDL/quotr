@@ -306,6 +306,36 @@ comment on column public.close_outs.was_watching_correct is
   'True if the user confirmed at close-out that their watching_for hunch was right.';
 
 -- ============================================================================
+-- Migration: itemized materials (optional line-item breakdown)
+-- ============================================================================
+-- Progressive enhancement — single-field materials remains the default and
+-- unchanged. Users opt in per-quote via an "Itemize" toggle.
+--
+-- Invariant (enforced in app code, not DB):
+--   materials_itemized = true  ⇒  materials_cents = sum(materials_lines[].cost_cents)
+--
+-- Shape of materials_lines (quotes):
+--   [ { "id": uuid, "name": "Breaker box", "cost_cents": 18000, "sort": 0 }, ... ]
+--
+-- Shape of actual_materials_lines (close_outs) — carries both sides per row:
+--   [ { "id": uuid, "name": "Breaker box",
+--       "quoted_cents": 18000, "actual_cents": 22000,
+--       "new_at_closeout": false }, ... ]
+-- ============================================================================
+alter table public.quotes
+  add column if not exists materials_itemized boolean not null default false,
+  add column if not exists materials_lines jsonb not null default '[]'::jsonb;
+
+alter table public.close_outs
+  add column if not exists actual_materials_itemized boolean not null default false,
+  add column if not exists actual_materials_lines jsonb not null default '[]'::jsonb;
+
+comment on column public.quotes.materials_lines is
+  'Optional line-item breakdown. Sum equals materials_cents when materials_itemized = true.';
+comment on column public.close_outs.actual_materials_lines is
+  'Optional line-item actuals. Each row carries quoted_cents + actual_cents + new_at_closeout flag.';
+
+-- ============================================================================
 -- Reconciliation helper (run manually if you ever suspect a drift)
 -- ============================================================================
 -- select u.id, u.credits_balance, coalesce(sum(l.delta), 0) as ledger_sum

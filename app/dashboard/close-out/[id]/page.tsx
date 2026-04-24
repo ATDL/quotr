@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { toCents } from "@/lib/utils/money";
 import { BADGE_ORDER, computeUnlocked } from "@/lib/badges";
+import { parseActualLines, parseQuoteLines } from "@/lib/materials";
 import CloseOutForm from "./CloseOutForm";
 
 export default async function CloseOutPage({
@@ -20,7 +21,7 @@ export default async function CloseOutPage({
   const { data: quote } = await supabase
     .from("quotes")
     .select(
-      "id, customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, status"
+      "id, customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, status, materials_itemized, materials_lines"
     )
     .eq("id", params.id)
     .single();
@@ -59,7 +60,9 @@ export default async function CloseOutPage({
     // Re-fetch for authoritative numbers — never trust client-submitted totals.
     const { data: q } = await supabase
       .from("quotes")
-      .select("id, hourly_rate_cents, quoted_total_cents, status")
+      .select(
+        "id, hourly_rate_cents, quoted_total_cents, status, materials_itemized, materials_lines"
+      )
       .eq("id", quoteId)
       .single();
 
@@ -81,7 +84,19 @@ export default async function CloseOutPage({
       .eq("user_id", user.id);
     const priorUnlocked = computeUnlocked(priorCloseOuts ?? []);
 
-    const actualMaterialsCents = toCents(actualMaterials);
+    // Itemized actuals — only honored when the source quote was itemized.
+    const actualItemized =
+      q.materials_itemized &&
+      formData.get("actualMaterialsItemized") === "true";
+    const actualLines = actualItemized
+      ? parseActualLines(formData.get("actualMaterialsLines"))
+      : [];
+
+    // When itemized, the cents total IS the sum of line actuals. This keeps
+    // the denormalized actual_materials_cents in sync with the lines.
+    const actualMaterialsCents = actualItemized
+      ? actualLines.reduce((s, l) => s + l.actual_cents, 0)
+      : toCents(actualMaterials);
     const actualLaborCents = Math.round(actualHours * q.hourly_rate_cents);
     const actualTotalCents = actualLaborCents + actualMaterialsCents;
     const profitCents = q.quoted_total_cents - actualTotalCents;
@@ -108,6 +123,8 @@ export default async function CloseOutPage({
       computed_profit_pct: parseFloat(profitPct.toFixed(2)),
       computed_variance_pct: parseFloat(variancePct.toFixed(2)),
       credits_spent: 1,
+      actual_materials_itemized: actualItemized,
+      actual_materials_lines: actualLines,
     });
 
     if (error) throw new Error(error.message);
