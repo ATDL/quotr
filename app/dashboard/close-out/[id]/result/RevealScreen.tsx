@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { formatPct, formatUSD } from "@/lib/utils/money";
 import type { Badge } from "@/lib/badges";
 import type { ActualLine, QuoteLine } from "@/lib/materials";
+import {
+  archiveQuote,
+  deleteQuoteForever,
+  undoCloseOut,
+} from "@/lib/quote-actions";
 
 type Props = {
   quoteId: string;
@@ -30,6 +35,10 @@ type Props = {
   materialsItemized: boolean;
   quoteLines: QuoteLine[];
   actualLines: ActualLine[];
+  canUndo: boolean;
+  isArchived: boolean;
+  deleteConfirmHint: string;
+  msg: string | null;
 };
 
 type Heat = {
@@ -364,6 +373,14 @@ export default function RevealScreen(p: Props) {
           New quote →
         </a>
       </div>
+
+      <DangerZone
+        quoteId={p.quoteId}
+        canUndo={p.canUndo}
+        isArchived={p.isArchived}
+        deleteConfirmHint={p.deleteConfirmHint}
+        msg={p.msg}
+      />
 
       {p.unlockedBadge && badgeModalOpen && (
         <BadgeUnlockModal
@@ -792,6 +809,267 @@ function BadgeUnlockModal({
           }
         }
       `}</style>
+    </div>
+  );
+}
+
+/**
+ * Danger zone — archive (one tap), undo close-out (5-min window),
+ * delete forever (two-stage modal). Lives below the main actions so it
+ * doesn't compete with the share/new-quote CTAs.
+ */
+function DangerZone({
+  quoteId,
+  canUndo,
+  isArchived,
+  deleteConfirmHint,
+  msg,
+}: {
+  quoteId: string;
+  canUndo: boolean;
+  isArchived: boolean;
+  deleteConfirmHint: string;
+  msg: string | null;
+}) {
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Re-open the delete modal automatically if we round-tripped with a
+  // mismatch error so the user keeps their place in the flow.
+  useEffect(() => {
+    if (msg === "delete_mismatch") setDeleteOpen(true);
+  }, [msg]);
+
+  const inlineNote =
+    msg === "undo_expired"
+      ? "Undo window has passed. Use Delete forever instead — credit not refunded."
+      : msg === "undo_rate_limited"
+      ? "You already used your undo this month. Use Delete forever — credit not refunded."
+      : msg === "delete_mismatch"
+      ? "Confirmation didn't match. Try again."
+      : null;
+
+  return (
+    <div className="rounded-lg border border-white/5 bg-steel/40 p-4">
+      <div className="text-[11px] uppercase tracking-wider text-fog">
+        Quote actions
+      </div>
+
+      {inlineNote && (
+        <p className="mt-2 text-xs text-rust" role="status" aria-live="polite">
+          {inlineNote}
+        </p>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {canUndo && (
+          <form action={undoCloseOut}>
+            <input type="hidden" name="quoteId" value={quoteId} />
+            <button
+              type="submit"
+              className="rounded border border-white/15 px-3 py-2 text-xs text-fog transition hover:border-white/30 hover:text-chalk"
+              title="Refunds 1 credit and re-opens the quote"
+            >
+              ⟲ Undo close-out
+            </button>
+          </form>
+        )}
+
+        {!isArchived && (
+          <form action={archiveQuote}>
+            <input type="hidden" name="quoteId" value={quoteId} />
+            <input
+              type="hidden"
+              name="returnTo"
+              value="/dashboard"
+            />
+            <button
+              type="submit"
+              className="rounded border border-white/15 px-3 py-2 text-xs text-fog transition hover:border-white/30 hover:text-chalk"
+              title="Hides from active list. Stats unchanged."
+            >
+              Archive
+            </button>
+          </form>
+        )}
+
+        {isArchived && (
+          <span className="rounded border border-white/10 bg-white/5 px-3 py-2 text-xs text-fog">
+            Archived · still counted in stats
+          </span>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setDeleteOpen(true)}
+          className="rounded border border-rust/30 px-3 py-2 text-xs text-rust transition hover:border-rust hover:bg-rust/10"
+        >
+          🗑 Delete forever
+        </button>
+      </div>
+
+      {deleteOpen && (
+        <DeleteForeverDialog
+          quoteId={quoteId}
+          confirmHint={deleteConfirmHint}
+          onClose={() => setDeleteOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Two-stage delete-forever modal:
+ *   Stage 1: warning + "Archive instead" (filled, primary) vs "Continue" (ghost)
+ *   Stage 2: type-to-confirm using customer_name (or last 4 of UUID)
+ *
+ * Server-side enforcement is in deleteQuoteForever — this UI is the deliberate
+ * friction that prevents misclicks, not a security boundary.
+ */
+function DeleteForeverDialog({
+  quoteId,
+  confirmHint,
+  onClose,
+}: {
+  quoteId: string;
+  confirmHint: string;
+  onClose: () => void;
+}) {
+  const [stage, setStage] = useState<1 | 2>(1);
+  const [typed, setTyped] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const continueRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (stage === 2) inputRef.current?.focus();
+    else continueRef.current?.focus();
+  }, [stage]);
+
+  const matches =
+    typed.trim().toLowerCase() === confirmHint.trim().toLowerCase();
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-dialog-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-6 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-2xl border border-rust/30 bg-steel p-6"
+      >
+        {stage === 1 ? (
+          <>
+            <h2
+              id="delete-dialog-title"
+              className="text-xl font-bold tracking-tight"
+            >
+              Delete this quote forever?
+            </h2>
+            <p className="mt-3 text-sm text-fog">
+              This removes the customer details immediately and erases the
+              quote completely after 30 days.
+            </p>
+            <div className="mt-3 rounded-md border border-white/10 bg-ink p-3 text-xs text-fog">
+              <p className="font-semibold text-chalk">
+                If this was a closed-out job, your stats will change.
+              </p>
+              <p className="mt-1">
+                The variance from this close-out won&rsquo;t count toward your
+                Accuracy score or calibration.
+              </p>
+            </div>
+            <p className="mt-3 text-sm text-fog">
+              If you just want it out of your active list,{" "}
+              <span className="text-chalk">archive instead</span> — that keeps
+              your stats honest.
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                ref={continueRef}
+                type="button"
+                onClick={() => setStage(2)}
+                className="rounded border border-white/15 px-4 py-2 text-sm text-fog hover:border-white/30 hover:text-chalk"
+              >
+                Continue →
+              </button>
+              <form action={archiveQuote} className="flex">
+                <input type="hidden" name="quoteId" value={quoteId} />
+                <input type="hidden" name="returnTo" value="/dashboard" />
+                <button type="submit" className="btn-primary w-full sm:w-auto">
+                  Archive instead
+                </button>
+              </form>
+            </div>
+          </>
+        ) : (
+          <form action={deleteQuoteForever} className="space-y-4">
+            <h2
+              id="delete-dialog-title"
+              className="text-xl font-bold tracking-tight"
+            >
+              Type to confirm
+            </h2>
+            <p className="text-sm text-fog">
+              To confirm permanent deletion, type:
+            </p>
+            <p className="rounded border border-white/10 bg-ink px-3 py-2 font-mono text-sm">
+              {confirmHint}
+            </p>
+            <input type="hidden" name="quoteId" value={quoteId} />
+            <input
+              ref={inputRef}
+              name="confirmation"
+              type="text"
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              className="input"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              aria-label="Type customer name to confirm"
+              aria-describedby="delete-confirm-status"
+            />
+            <p
+              id="delete-confirm-status"
+              aria-live="polite"
+              className={`text-xs ${matches ? "text-moss" : "text-fog"}`}
+            >
+              {typed
+                ? matches
+                  ? "Match. Delete enabled."
+                  : "Doesn't match yet."
+                : ""}
+            </p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded border border-white/15 px-4 py-2 text-sm text-fog hover:border-white/30 hover:text-chalk"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!matches}
+                className="rounded border border-rust bg-rust px-4 py-2 text-sm font-semibold text-white transition hover:bg-rust/90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Delete forever
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

@@ -11,14 +11,33 @@ import {
  * My Jobs — the feedback loop, made visible.
  * Reads from the my_jobs_feed view (RLS restricts to the caller's rows).
  */
-export default async function DashboardHome() {
+export default async function DashboardHome({
+  searchParams,
+}: {
+  searchParams: { msg?: string };
+}) {
   const supabase = createClient();
 
+  const feedSelect =
+    "close_out_id, quote_id, customer_name, scope, quoted_total_cents, actual_total_cents, computed_profit_cents, computed_profit_pct, computed_variance_pct, job_type, was_watching_correct, closed_at";
+
+  // STATS feed — archived close-outs still count toward Accuracy + variance
+  // per spec; only deleted rows drop out.
+  const { data: jobsForStats } = await supabase
+    .from("my_jobs_feed")
+    .select(feedSelect)
+    .is("quote_deleted_at", null)
+    .is("close_out_deleted_at", null)
+    .order("closed_at", { ascending: false });
+
+  // DISPLAY feed — hides archived AND deleted from the active list/table.
   const { data: jobs } = await supabase
     .from("my_jobs_feed")
-    .select(
-      "close_out_id, quote_id, customer_name, scope, quoted_total_cents, actual_total_cents, computed_profit_cents, computed_profit_pct, computed_variance_pct, job_type, closed_at"
-    )
+    .select(feedSelect)
+    .is("quote_archived_at", null)
+    .is("quote_deleted_at", null)
+    .is("close_out_archived_at", null)
+    .is("close_out_deleted_at", null)
     .order("closed_at", { ascending: false })
     .limit(25);
 
@@ -26,21 +45,21 @@ export default async function DashboardHome() {
     .from("quotes")
     .select("id, customer_name, scope, quoted_total_cents, created_at")
     .eq("status", "open")
+    .is("archived_at", null)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(10);
 
-  // Milestones strip — needs was_watching_correct which isn't in my_jobs_feed.
-  // RLS scopes to the current user automatically.
-  const { data: closeOutsForBadges } = await supabase
-    .from("close_outs")
-    .select("computed_variance_pct, was_watching_correct");
-  const unlockedBadges = computeUnlocked(closeOutsForBadges ?? []);
+  const unlockedBadges = computeUnlocked(jobsForStats ?? []);
 
   const hasJobs = (jobs?.length ?? 0) > 0;
   const hasOpen = (openQuotes?.length ?? 0) > 0;
 
+  const banner = bannerForMsg(searchParams.msg);
+
   return (
     <div className="space-y-10">
+      {banner && <ActionBanner tone={banner.tone}>{banner.text}</ActionBanner>}
       <header>
         <h1 className="text-3xl font-bold tracking-tight">My jobs</h1>
         <p className="mt-1 text-sm text-fog">
@@ -92,11 +111,11 @@ export default async function DashboardHome() {
           <EmptyState />
         ) : (
           <div className="space-y-6">
-            <AccuracyRow jobs={jobs!} />
+            <AccuracyRow jobs={jobsForStats ?? jobs!} />
             <LastJobCard job={jobs![0]} />
             <MilestonesStrip unlocked={unlockedBadges} />
-            <SummaryBar jobs={jobs!} />
-            <ByJobTypeCard jobs={jobs!} />
+            <SummaryBar jobs={jobsForStats ?? jobs!} />
+            <ByJobTypeCard jobs={jobsForStats ?? jobs!} />
             <div className="overflow-x-auto rounded-xl border border-white/10">
               <table className="w-full min-w-[720px] text-sm">
                 <thead className="bg-steel text-left text-xs uppercase tracking-wider text-fog">
@@ -194,6 +213,7 @@ type Job = {
   scope: string | null;
   computed_variance_pct: number;
   job_type: string | null;
+  was_watching_correct?: boolean | null;
   closed_at: string;
 };
 
@@ -657,9 +677,75 @@ function EmptyState() {
         punch in your actual hours and materials. You&rsquo;ll see quoted vs.
         actual, profit, and variance right here.
       </p>
-      <a href="/dashboard/new-quote" className="btn-primary mt-6 inline-flex">
-        Start a quote →
-      </a>
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-4 text-sm">
+        <a href="/dashboard/new-quote" className="btn-primary inline-flex">
+          Start a quote →
+        </a>
+        <a href="/dashboard/archived" className="text-fog hover:text-chalk">
+          View archived
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function bannerForMsg(
+  msg: string | undefined
+): { tone: "ok" | "warn"; text: string } | null {
+  switch (msg) {
+    case "archived":
+      return { tone: "ok", text: "Archived. Stats unchanged." };
+    case "restored":
+      return { tone: "ok", text: "Restored to your active list." };
+    case "deleted":
+      return {
+        tone: "warn",
+        text: "Deleted. Recover within 30 days from /dashboard/deleted.",
+      };
+    case "recovered":
+      return { tone: "ok", text: "Recovered. Customer details stay blank." };
+    case "undone":
+      return { tone: "ok", text: "Close-out undone. Credit refunded." };
+    case "undo_expired":
+      return {
+        tone: "warn",
+        text: "Undo window has passed. Use Delete forever instead — that won't refund the credit.",
+      };
+    case "undo_rate_limited":
+      return {
+        tone: "warn",
+        text: "You already used your undo this month. Use Delete forever — note: that won't refund the credit.",
+      };
+    case "undo_not_found":
+      return { tone: "warn", text: "Couldn't find that close-out to undo." };
+    case "delete_mismatch":
+      return {
+        tone: "warn",
+        text: "Confirmation didn't match. Nothing was deleted.",
+      };
+    default:
+      return null;
+  }
+}
+
+function ActionBanner({
+  tone,
+  children,
+}: {
+  tone: "ok" | "warn";
+  children: React.ReactNode;
+}) {
+  const cls =
+    tone === "ok"
+      ? "border-moss/30 bg-moss/5 text-chalk"
+      : "border-rust/40 bg-rust/5 text-chalk";
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`rounded-lg border ${cls} px-4 py-3 text-sm`}
+    >
+      {children}
     </div>
   );
 }

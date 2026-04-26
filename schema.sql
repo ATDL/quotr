@@ -336,6 +336,80 @@ comment on column public.close_outs.actual_materials_lines is
   'Optional line-item actuals. Each row carries quoted_cents + actual_cents + new_at_closeout flag.';
 
 -- ============================================================================
+-- Migration: archive + delete-forever + undo close-out
+-- ============================================================================
+-- Two-tier deletion: archive (soft hide, stats unchanged) and delete-forever
+-- (PII redacted immediately, soft-deleted row hard-purged after 30 days).
+-- Undo close-out: 5-minute window, refunds the credit, max 1 per 30 days.
+--
+-- Filter conventions:
+--   active list / dashboard:  archived_at IS NULL AND deleted_at IS NULL
+--   stats / accuracy / badges: deleted_at IS NULL  (archived still counts)
+-- ============================================================================
+
+alter table public.quotes
+  add column if not exists archived_at timestamptz,
+  add column if not exists deleted_at timestamptz,
+  add column if not exists pii_redacted_at timestamptz;
+
+alter table public.close_outs
+  add column if not exists archived_at timestamptz,
+  add column if not exists deleted_at timestamptz;
+
+alter table public.users
+  add column if not exists last_undo_at timestamptz;
+
+create index if not exists quotes_active_idx
+  on public.quotes(user_id)
+  where archived_at is null and deleted_at is null;
+
+comment on column public.quotes.archived_at is
+  'Soft-hide. Hidden from active list/dashboard; close-out still counts in stats.';
+comment on column public.quotes.deleted_at is
+  'Soft-delete. PII is nulled at this time; row hard-purged after 30 days.';
+comment on column public.quotes.pii_redacted_at is
+  'When customer_name + scope + watching_for were nulled (set on delete-forever).';
+comment on column public.users.last_undo_at is
+  'Last time the user used "Undo close-out". Enforces the 1-per-30-days limit.';
+
+-- Recreate the my_jobs_feed view so it surfaces the archive/delete state.
+-- This lets the dashboard filter both "active list" and "stats" projections
+-- against the same source.
+drop view if exists public.my_jobs_feed;
+create view public.my_jobs_feed as
+select
+  co.id            as close_out_id,
+  q.id             as quote_id,
+  co.user_id,
+  q.customer_name,
+  q.scope,
+  q.quoted_total_cents,
+  (co.actual_materials_cents + (co.actual_hours * q.hourly_rate_cents)::integer) as actual_total_cents,
+  co.computed_profit_cents,
+  co.computed_profit_pct,
+  co.computed_variance_pct,
+  co.job_type,
+  co.surprise_note,
+  co.was_watching_correct,
+  co.created_at    as closed_at,
+  q.archived_at    as quote_archived_at,
+  q.deleted_at     as quote_deleted_at,
+  co.archived_at   as close_out_archived_at,
+  co.deleted_at    as close_out_deleted_at
+from public.close_outs co
+join public.quotes q on q.id = co.quote_id;
+
+-- ============================================================================
+-- Hard-purge cron (wire up via Vercel Cron when ready):
+--
+--   delete from public.quotes
+--    where deleted_at is not null
+--      and deleted_at < now() - interval '30 days';
+--
+-- close_outs cascade via the existing fk on quote_id.
+-- ============================================================================
+
+-- ============================================================================
 -- Reconciliation helper (run manually if you ever suspect a drift)
 -- ============================================================================
 -- select u.id, u.credits_balance, coalesce(sum(l.delta), 0) as ledger_sum

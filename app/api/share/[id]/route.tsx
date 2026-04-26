@@ -84,15 +84,89 @@ export async function GET(
     auth: { persistSession: false },
   });
 
-  // Privacy: only query fields that are safe to render publicly.
+  // Privacy: only query fields that are safe to render publicly. We also
+  // need to know if the close-out has been archived (→ render a "private"
+  // image) or deleted (→ 404). Spec calls for distinct UX.
   const { data: closeOut } = await supabase
     .from("close_outs")
-    .select("computed_variance_pct, job_type")
+    .select(
+      "computed_variance_pct, job_type, archived_at, deleted_at, quotes!inner(archived_at, deleted_at)"
+    )
     .eq("quote_id", params.id)
     .maybeSingle();
 
   if (!closeOut) {
     return new Response("Not found", { status: 404 });
+  }
+
+  // Type the embedded join — Supabase returns it as either an object or
+  // (in some shapes) an array. We selected !inner so it's a single object.
+  const parentQuote = (
+    closeOut as unknown as {
+      quotes: { archived_at: string | null; deleted_at: string | null };
+    }
+  ).quotes;
+
+  if (closeOut.deleted_at || parentQuote?.deleted_at) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  if (closeOut.archived_at || parentQuote?.archived_at) {
+    return new ImageResponse(
+      (
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "#0B0B0C",
+            color: "#9AA0A6",
+            padding: 80,
+            fontFamily: "system-ui, sans-serif",
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+              color: "#C55B2E",
+              fontSize: 40,
+              fontWeight: 800,
+              marginBottom: 60,
+            }}
+          >
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 6,
+                background: "#C55B2E",
+              }}
+            />
+            Quotr
+          </div>
+          <div style={{ fontSize: 64, fontWeight: 700, color: "#F5F5F3" }}>
+            This close-out is private.
+          </div>
+          <div style={{ marginTop: 32, fontSize: 28 }}>
+            quotr.app
+          </div>
+        </div>
+      ),
+      {
+        width: 1080,
+        height: 1080,
+        headers: {
+          "cache-control":
+            "public, max-age=300, s-maxage=300, stale-while-revalidate=60",
+        },
+      }
+    );
   }
 
   const variance = Number(closeOut.computed_variance_pct);

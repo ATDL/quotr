@@ -19,7 +19,7 @@ export default async function EditCloseOutPage({
   const { data: quote } = await supabase
     .from("quotes")
     .select(
-      "id, customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, materials_itemized, materials_lines"
+      "id, customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, materials_itemized, materials_lines, archived_at, deleted_at"
     )
     .eq("id", params.id)
     .single();
@@ -32,7 +32,7 @@ export default async function EditCloseOutPage({
     .eq("quote_id", params.id)
     .single();
 
-  if (!quote || !closeOut) notFound();
+  if (!quote || !closeOut || quote.deleted_at) notFound();
 
   async function updateCloseOut(formData: FormData) {
     "use server";

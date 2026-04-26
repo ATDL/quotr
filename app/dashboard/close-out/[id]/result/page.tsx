@@ -9,7 +9,7 @@ export default async function CloseOutResultPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams: { badge?: string };
+  searchParams: { badge?: string; msg?: string };
 }) {
   const supabase = createClient();
 
@@ -21,7 +21,7 @@ export default async function CloseOutResultPage({
   const { data: quote } = await supabase
     .from("quotes")
     .select(
-      "customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, materials_itemized, materials_lines"
+      "id, customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, materials_itemized, materials_lines, archived_at, deleted_at"
     )
     .eq("id", params.id)
     .single();
@@ -29,12 +29,34 @@ export default async function CloseOutResultPage({
   const { data: closeOut } = await supabase
     .from("close_outs")
     .select(
-      "actual_hours, actual_materials_cents, surprise_note, job_type, was_watching_correct, computed_profit_cents, computed_profit_pct, computed_variance_pct, actual_materials_itemized, actual_materials_lines"
+      "actual_hours, actual_materials_cents, surprise_note, job_type, was_watching_correct, computed_profit_cents, computed_profit_pct, computed_variance_pct, actual_materials_itemized, actual_materials_lines, created_at"
     )
     .eq("quote_id", params.id)
     .single();
 
-  if (!quote || !closeOut) notFound();
+  if (!quote || !closeOut || quote.deleted_at) notFound();
+
+  // Undo eligibility: server-side wall-clock against close-out create time
+  // plus the user's last_undo_at. The button is hidden, not just disabled,
+  // when ineligible — server still re-checks before honoring.
+  const closeOutAgeMs = Date.now() - new Date(closeOut.created_at).getTime();
+  const within5Min = closeOutAgeMs < 5 * 60 * 1000;
+
+  const { data: undoProfile } = await supabase
+    .from("users")
+    .select("last_undo_at")
+    .eq("id", user.id)
+    .single();
+  const lastUndoMs = undoProfile?.last_undo_at
+    ? Date.now() - new Date(undoProfile.last_undo_at).getTime()
+    : Infinity;
+  const undoQuotaAvailable = lastUndoMs >= 30 * 24 * 60 * 60 * 1000;
+
+  const canUndo = within5Min && undoQuotaAvailable && !quote.archived_at;
+  // The brief uses customer_name as the type-to-confirm token, falling back
+  // to the last 4 chars of the quote ID when there's no name.
+  const deleteConfirmHint = quote.customer_name?.trim() || quote.id.slice(-4);
+  const isArchived = !!quote.archived_at;
 
   // Derived values computed server-side so the client doesn't re-compute math.
   const quotedLaborCents = Math.round(
@@ -95,6 +117,10 @@ export default async function CloseOutResultPage({
       }
       quoteLines={parseQuoteLines(quote.materials_lines)}
       actualLines={parseActualLines(closeOut.actual_materials_lines)}
+      canUndo={canUndo}
+      isArchived={isArchived}
+      deleteConfirmHint={deleteConfirmHint}
+      msg={searchParams.msg ?? null}
     />
   );
 }

@@ -21,12 +21,14 @@ export default async function CloseOutPage({
   const { data: quote } = await supabase
     .from("quotes")
     .select(
-      "id, customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, status, materials_itemized, materials_lines"
+      "id, customer_name, scope, watching_for, quoted_hours, quoted_materials_cents, hourly_rate_cents, quoted_total_cents, status, materials_itemized, materials_lines, archived_at, deleted_at"
     )
     .eq("id", params.id)
     .single();
 
-  if (!quote || quote.status !== "open") notFound();
+  if (!quote || quote.status !== "open" || quote.archived_at || quote.deleted_at) {
+    notFound();
+  }
 
   const { data: profile } = await supabase
     .from("users")

@@ -74,6 +74,20 @@ export default async function DashboardLayout({
       </nav>
 
       <main className="mx-auto max-w-5xl px-6 py-10">{children}</main>
+
+      <footer className="mx-auto max-w-5xl px-6 pb-10 pt-4 text-xs text-fog">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-4">
+          <span>© {new Date().getFullYear()} Quotr</span>
+          <div className="flex flex-wrap gap-4">
+            <a href="/dashboard/archived" className="hover:text-chalk">
+              Archived
+            </a>
+            <a href="/dashboard/deleted" className="hover:text-chalk">
+              Recently deleted
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
