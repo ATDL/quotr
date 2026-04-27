@@ -39,13 +39,27 @@ export const PACK_PRICE_DOLLARS: Record<Pack, number> = {
 };
 
 export function priceIdForPack(pack: Pack): string {
+  const envName = `NEXT_PUBLIC_STRIPE_PRICE_${pack.toUpperCase()}`;
   const id =
     pack === "starter"
       ? process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTER
       : process.env.NEXT_PUBLIC_STRIPE_PRICE_PRO;
   if (!id) {
+    throw new Error(`${envName} is not set`);
+  }
+  // The most common Stripe-checkout footgun: pasting a product ID
+  // (prod_...) when Checkout actually needs a price ID (price_...).
+  // Catch it with a friendly explanation instead of letting Stripe return
+  // "No such price: 'prod_xxx'" much later.
+  if (id.startsWith("prod_")) {
     throw new Error(
-      `Stripe price ID for "${pack}" pack is not set (NEXT_PUBLIC_STRIPE_PRICE_${pack.toUpperCase()})`
+      `${envName} looks like a product ID (prod_…). Checkout needs a PRICE ID (price_…). ` +
+        `Open the product in the Stripe dashboard, click the price, and copy the ID that starts with "price_".`
+    );
+  }
+  if (!id.startsWith("price_")) {
+    throw new Error(
+      `${envName} should start with "price_" but is "${id.slice(0, 12)}…". Re-check the value in the Stripe dashboard.`
     );
   }
   return id;

@@ -52,22 +52,51 @@ export default async function CreditsPage({
     const origin =
       process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
-    const session = await stripe().checkout.sessions.create({
-      mode: "payment",
-      line_items: [{ price: priceIdForPack(pack), quantity: 1 }],
-      success_url: `${origin}/dashboard/credits?msg=purchased`,
-      cancel_url: `${origin}/dashboard/credits?msg=cancelled`,
-      client_reference_id: user.id,
-      // Metadata flows through to the webhook event so it can credit the
-      // right user with the right pack size. Don't trust amount alone —
-      // someone could swap price IDs at checkout.
-      metadata: { user_id: user.id, pack },
-    });
+    // Resolve the URL inside try/catch so any Stripe / config error gets
+    // surfaced as a banner on the credits page instead of a generic 500.
+    // redirect() lives outside try because it throws NEXT_REDIRECT.
+    let checkoutUrl: string | null = null;
+    let failureCode: string | null = null;
 
-    if (!session.url) {
-      throw new Error("Stripe Checkout session has no url");
+    try {
+      const session = await stripe().checkout.sessions.create({
+        mode: "payment",
+        line_items: [{ price: priceIdForPack(pack), quantity: 1 }],
+        success_url: `${origin}/dashboard/credits?msg=purchased`,
+        cancel_url: `${origin}/dashboard/credits?msg=cancelled`,
+        client_reference_id: user.id,
+        // Metadata flows through to the webhook event so it can credit the
+        // right user with the right pack size. Don't trust amount alone —
+        // someone could swap price IDs at checkout.
+        metadata: { user_id: user.id, pack },
+      });
+
+      if (!session.url) throw new Error("Stripe session has no URL");
+      checkoutUrl = session.url;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Loud server log — visible in Vercel function logs.
+      console.error("[stripe.checkout] failed:", msg);
+
+      if (/looks like a product ID|prod_/i.test(msg)) {
+        failureCode = "wrong_id_type";
+      } else if (/should start with "price_"/.test(msg)) {
+        failureCode = "wrong_id_format";
+      } else if (/STRIPE_SECRET_KEY/i.test(msg)) {
+        failureCode = "missing_secret";
+      } else if (/STRIPE_PRICE_/i.test(msg)) {
+        failureCode = "missing_price";
+      } else if (/No such price/i.test(msg)) {
+        failureCode = "price_not_found";
+      } else if (/test mode|live mode/i.test(msg)) {
+        failureCode = "mode_mismatch";
+      } else {
+        failureCode = "stripe_error";
+      }
     }
-    redirect(session.url);
+
+    if (failureCode) redirect(`/dashboard/credits?msg=${failureCode}`);
+    if (checkoutUrl) redirect(checkoutUrl);
   }
 
   return (
@@ -178,6 +207,41 @@ function bannerForMsg(
       return {
         tone: "warn",
         text: "Couldn't process that pack. Pick one below.",
+      };
+    case "wrong_id_type":
+      return {
+        tone: "warn",
+        text: "Stripe is configured with a PRODUCT ID (prod_…) instead of a PRICE ID (price_…). Open the product in Stripe → click the price → copy the ID that starts with price_… and update the env var.",
+      };
+    case "wrong_id_format":
+      return {
+        tone: "warn",
+        text: "Stripe price ID is malformed. It should start with price_… — re-check the value in the Stripe dashboard.",
+      };
+    case "missing_secret":
+      return {
+        tone: "warn",
+        text: "STRIPE_SECRET_KEY is not set on the server. Add it to Vercel and redeploy.",
+      };
+    case "missing_price":
+      return {
+        tone: "warn",
+        text: "Stripe price IDs aren't set. Add NEXT_PUBLIC_STRIPE_PRICE_STARTER and _PRO to Vercel and redeploy.",
+      };
+    case "price_not_found":
+      return {
+        tone: "warn",
+        text: "Stripe couldn't find that price. Likely a test/live key mismatch — make sure your Stripe key and price IDs are from the same mode (both test or both live).",
+      };
+    case "mode_mismatch":
+      return {
+        tone: "warn",
+        text: "Test/live mode mismatch on Stripe credentials. The secret key and price IDs must come from the same Stripe mode.",
+      };
+    case "stripe_error":
+      return {
+        tone: "warn",
+        text: "Couldn't start Stripe Checkout. Check the Vercel function logs for details, then try again.",
       };
     default:
       return null;
