@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { normalizeSiteUrl } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
 import {
   PACK_PRICE_DOLLARS,
@@ -206,8 +207,15 @@ function PackBuyCard({
  * the request reaches us with a Host header — which is always.
  */
 function resolveOrigin(): string {
+  // Normalize bare-domain env vars (e.g. "foo.vercel.app") into proper
+  // absolute URLs. If the env var is malformed past saving, fall through
+  // to header-derived host.
   if (process.env.NEXT_PUBLIC_SITE_URL) {
-    return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
+    const normalized = normalizeSiteUrl(
+      process.env.NEXT_PUBLIC_SITE_URL,
+      ""
+    );
+    if (normalized) return normalized;
   }
   const h = headers();
   const fwdHost = h.get("x-forwarded-host");

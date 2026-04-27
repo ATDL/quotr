@@ -1,9 +1,13 @@
 import type { Metadata, Viewport } from "next";
+import { normalizeSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://quotr.vercel.app"
+    normalizeSiteUrl(
+      process.env.NEXT_PUBLIC_SITE_URL,
+      "https://quotr.vercel.app"
+    )
   ),
   title: "Quotr — free quote calculator for contractors with profit tracking",
   description:
