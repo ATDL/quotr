@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -49,8 +50,7 @@ export default async function CreditsPage({
     if (!isPack(packRaw)) redirect("/dashboard/credits?msg=invalid_pack");
     const pack = packRaw as Pack;
 
-    const origin =
-      process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+    const origin = resolveOrigin();
 
     // Resolve the URL inside try/catch so any Stripe / config error gets
     // surfaced as a banner on the credits page instead of a generic 500.
@@ -190,6 +190,31 @@ function PackBuyCard({
       </button>
     </form>
   );
+}
+
+/**
+ * Resolve the site origin for Stripe success/cancel URLs.
+ *
+ * Priority:
+ *   1. NEXT_PUBLIC_SITE_URL env var (cleanest — set this on Vercel)
+ *   2. The incoming request's forwarded host (Vercel sets x-forwarded-host
+ *      and x-forwarded-proto on every request)
+ *   3. Plain Host header (for direct connections / non-proxy environments)
+ *   4. Localhost dev fallback
+ *
+ * This means the wrong-domain redirect bug can't happen again as long as
+ * the request reaches us with a Host header — which is always.
+ */
+function resolveOrigin(): string {
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
+  }
+  const h = headers();
+  const fwdHost = h.get("x-forwarded-host");
+  const host = fwdHost ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? (fwdHost ? "https" : "http");
+  if (host) return `${proto}://${host}`;
+  return "http://localhost:3000";
 }
 
 function bannerForMsg(
