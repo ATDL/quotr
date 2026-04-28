@@ -723,6 +723,21 @@ function bannerForMsg(
         tone: "warn",
         text: "Confirmation didn't match. Nothing was deleted.",
       };
+    case "result_quote_missing":
+      return {
+        tone: "warn",
+        text: "Couldn't find that quote. It may have been deleted, or your session is stale — try signing out and back in.",
+      };
+    case "result_closeout_missing":
+      return {
+        tone: "warn",
+        text: "Quote exists but its close-out row is missing. Check Supabase: select * from close_outs where quote_id = '<id from URL>'.",
+      };
+    case "result_quote_deleted":
+      return {
+        tone: "warn",
+        text: "That quote was deleted. Recover it from Recently deleted (footer) within 30 days.",
+      };
     default:
       return null;
   }

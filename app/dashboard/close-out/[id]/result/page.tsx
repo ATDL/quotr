@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { BADGES, isBadgeId } from "@/lib/badges";
 import { parseActualLines, parseQuoteLines } from "@/lib/materials";
@@ -34,7 +34,25 @@ export default async function CloseOutResultPage({
     .eq("quote_id", params.id)
     .single();
 
-  if (!quote || !closeOut || quote.deleted_at) notFound();
+  // Instead of a hard 404 (which gives no info), redirect to the dashboard
+  // with a diagnostic banner. We also log the cause so it's visible in
+  // Vercel function logs when this fires.
+  if (!quote || !closeOut || quote.deleted_at) {
+    const reason = !quote
+      ? "quote_missing"
+      : !closeOut
+      ? "closeout_missing"
+      : "quote_deleted";
+    console.error("[result page] cannot render", {
+      quoteId: params.id,
+      userId: user.id,
+      reason,
+      quoteFound: !!quote,
+      closeOutFound: !!closeOut,
+      quoteDeletedAt: quote?.deleted_at ?? null,
+    });
+    redirect(`/dashboard?msg=result_${reason}`);
+  }
 
   // Undo eligibility: server-side wall-clock against close-out create time
   // plus the user's last_undo_at. The button is hidden, not just disabled,

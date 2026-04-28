@@ -375,8 +375,16 @@ comment on column public.users.last_undo_at is
 -- Recreate the my_jobs_feed view so it surfaces the archive/delete state.
 -- This lets the dashboard filter both "active list" and "stats" projections
 -- against the same source.
+--
+-- SECURITY: WITH (security_invoker = true) is critical. Without it, views
+-- in Supabase run as the postgres role (which has BYPASSRLS), so any
+-- regular user querying the view would see EVERY user's rows. With it,
+-- the view honors the caller's RLS policies. Postgres 15+ supports this
+-- and Supabase runs PG 15.
 drop view if exists public.my_jobs_feed;
-create view public.my_jobs_feed as
+create view public.my_jobs_feed
+  with (security_invoker = true)
+as
 select
   co.id            as close_out_id,
   q.id             as quote_id,
