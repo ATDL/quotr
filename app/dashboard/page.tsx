@@ -718,6 +718,11 @@ function bannerForMsg(
       };
     case "undo_not_found":
       return { tone: "warn", text: "Couldn't find that close-out to undo." };
+    case "undo_refund_failed":
+      return {
+        tone: "warn",
+        text: "Close-out was undone but the credit refund failed. Check the Vercel function logs and reconcile manually if needed.",
+      };
     case "delete_mismatch":
       return {
         tone: "warn",

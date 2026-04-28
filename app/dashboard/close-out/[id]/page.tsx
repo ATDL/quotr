@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { toCents } from "@/lib/utils/money";
 import { BADGE_ORDER, computeUnlocked } from "@/lib/badges";
 import { parseActualLines, parseQuoteLines } from "@/lib/materials";
@@ -131,13 +131,31 @@ export default async function CloseOutPage({
 
     if (error) throw new Error(error.message);
 
-    // Trigger on_credits_ledger_insert decrements users.credits_balance.
-    await supabase.from("credits_ledger").insert({
-      user_id: user.id,
-      delta: -1,
-      reason: "close_out_debit",
-      related_id: quoteId,
-    });
+    // Credits ledger has only a SELECT policy for users — INSERTs MUST go
+    // through the service-role client (this is per-design so client code
+    // can never grant itself credits). The on_credits_ledger_insert trigger
+    // bumps users.credits_balance.
+    const ledgerClient = createServiceClient();
+    const { error: ledgerErr } = await ledgerClient
+      .from("credits_ledger")
+      .insert({
+        user_id: user.id,
+        delta: -1,
+        reason: "close_out_debit",
+        related_id: quoteId,
+      });
+
+    if (ledgerErr) {
+      // Loud log so a missed debit shows up in Vercel logs for reconciliation.
+      // We don't unwind the close_out — the user did the work, and we'd
+      // rather they get a free close-out than lose the data.
+      console.error("[close-out] credit debit failed:", {
+        userId: user.id,
+        quoteId,
+        error: ledgerErr.message,
+        code: ledgerErr.code,
+      });
+    }
 
     // Diff unlocks to find which badges the user just earned.
     const newUnlocked = computeUnlocked([

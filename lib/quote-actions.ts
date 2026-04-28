@@ -11,7 +11,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -208,14 +208,28 @@ export async function undoCloseOut(formData: FormData) {
     }
   }
 
-  // Refund the credit. The on_credits_ledger_insert trigger updates
-  // users.credits_balance automatically.
-  await supabase.from("credits_ledger").insert({
-    user_id: user.id,
-    delta: closeOut.credits_spent ?? 1,
-    reason: "refund",
-    related_id: quoteId,
-  });
+  // Refund the credit via service-role — credits_ledger only has a SELECT
+  // policy for users, so user-scoped inserts get silently denied by RLS.
+  // The on_credits_ledger_insert trigger bumps users.credits_balance.
+  const ledgerClient = createServiceClient();
+  const { error: refundErr } = await ledgerClient
+    .from("credits_ledger")
+    .insert({
+      user_id: user.id,
+      delta: closeOut.credits_spent ?? 1,
+      reason: "refund",
+      related_id: quoteId,
+    });
+
+  if (refundErr) {
+    console.error("[undoCloseOut] refund failed:", {
+      userId: user.id,
+      quoteId,
+      error: refundErr.message,
+      code: refundErr.code,
+    });
+    redirect(`/dashboard?msg=undo_refund_failed`);
+  }
 
   // Delete the close-out. Quote status reverts to 'open' explicitly — the
   // mark_quote_closed trigger only fires on INSERT, not DELETE.
