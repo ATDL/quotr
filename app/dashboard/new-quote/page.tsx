@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import Calculator from "@/components/Calculator";
 import { toCents } from "@/lib/utils/money";
@@ -60,6 +61,7 @@ async function saveQuote(formData: FormData) {
     materials_lines: materialsLines,
   });
 
+  revalidatePath("/dashboard");
   redirect("/dashboard");
 }
 

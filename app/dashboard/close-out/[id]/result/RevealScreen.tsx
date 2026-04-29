@@ -186,8 +186,22 @@ export default function RevealScreen(p: Props) {
   // Confetti on "Yes, called it".
   const showConfetti = p.wasWatchingCorrect === true;
 
-  const sign = p.variancePct > 0 ? "+" : p.variancePct < 0 ? "−" : "";
+  // Display the magnitude only. Direction is conveyed by the headline
+  // ("Sandbagged." / "Big miss.") + the sub-label ("under quote") + heat
+  // color. A signed −80% on a Sandbagged win was reading as a loss.
   const absDisplay = Math.abs(displayVariance);
+  const direction =
+    p.variancePct > 0.5
+      ? "over"
+      : p.variancePct < -0.5
+      ? "under"
+      : "on";
+  const directionLabel =
+    direction === "over"
+      ? "over quote"
+      : direction === "under"
+      ? "under quote"
+      : "right on quote";
 
   // Heat colors: use arbitrary Tailwind classes so we don't need to pre-list.
   const numberColorClass =
@@ -255,7 +269,12 @@ export default function RevealScreen(p: Props) {
           aria-live="polite"
           aria-atomic="true"
         >
-          {animate && stage < 4 ? "—" : `${sign}${absDisplay.toFixed(0)}%`}
+          {animate && stage < 4 ? "—" : `${absDisplay.toFixed(0)}%`}
+        </div>
+        <div
+          className={`mt-2 text-sm uppercase tracking-wider text-fog transition-opacity duration-500 ease-reveal ${subtle(5)}`}
+        >
+          {directionLabel}
         </div>
       </div>
 

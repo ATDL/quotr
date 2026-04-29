@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { toCents } from "@/lib/utils/money";
 import { BADGE_ORDER, computeUnlocked } from "@/lib/badges";
@@ -173,6 +174,11 @@ export default async function CloseOutPage({
       (id) => newUnlocked.has(id) && !priorUnlocked.has(id)
     );
     const badgeParam = newly.length > 0 ? `?badge=${newly[0]}` : "";
+
+    // Force the dashboard's cached data to refetch so the credits pill
+    // and stats reflect the just-debited balance immediately.
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/credits");
 
     // Redirect to the result screen — the feedback-loop payoff.
     redirect(`/dashboard/close-out/${quoteId}/result${badgeParam}`);
