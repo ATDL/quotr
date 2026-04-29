@@ -7,6 +7,7 @@ import {
   padLabel,
   type QuoteLine,
 } from "@/lib/materials";
+import { computeQuote, MARGIN_MAX } from "@/lib/pricing";
 
 type Props = {
   saveAction?: (formData: FormData) => Promise<void>;
@@ -31,8 +32,8 @@ export default function Calculator({ saveAction }: Props = {}) {
   const [materials, setMaterials] = useState<string>(
     exampleMode ? "320" : ""
   );
-  const [markupPct, setMarkupPct] = useState<string>(
-    exampleMode ? "15" : ""
+  const [marginPct, setMarginPct] = useState<string>(
+    exampleMode ? "20" : ""
   );
   const [customerName, setCustomerName] = useState<string>("");
   const [scope, setScope] = useState<string>("");
@@ -43,36 +44,52 @@ export default function Calculator({ saveAction }: Props = {}) {
   const [materialsItemized, setMaterialsItemized] = useState(false);
   const [materialsLines, setMaterialsLines] = useState<QuoteLine[]>([]);
 
-  const { laborCents, materialsCents, markupCents, totalCents, hasAny } =
-    useMemo(() => {
-      const h = parseFloat(hours) || 0;
-      const r = parseFloat(rate) || 0;
-      const singleMaterials = parseFloat(materials) || 0;
-      const mk = parseFloat(markupPct) || 0;
+  const {
+    laborCents,
+    materialsCents,
+    subtotalCents,
+    profitCents,
+    totalCents,
+    marginPctApplied,
+    equivalentMarkupPct,
+    marginEntered,
+    hasAny,
+  } = useMemo(() => {
+    const h = parseFloat(hours) || 0;
+    const r = parseFloat(rate) || 0;
+    const singleMaterials = parseFloat(materials) || 0;
+    const marginEntered = parseFloat(marginPct) || 0;
 
-      const laborCents = toCents(h * r);
-      const linesSum = materialsLines.reduce((s, l) => s + l.cost_cents, 0);
-      const materialsCents = materialsItemized
-        ? linesSum
-        : toCents(singleMaterials);
-      const subtotal = laborCents + materialsCents;
-      const markupCents = Math.round(subtotal * (mk / 100));
-      const totalCents = subtotal + markupCents;
+    const laborCents = toCents(h * r);
+    const linesSum = materialsLines.reduce((s, l) => s + l.cost_cents, 0);
+    const materialsCents = materialsItemized
+      ? linesSum
+      : toCents(singleMaterials);
 
-      return {
-        laborCents,
-        materialsCents,
-        markupCents,
-        totalCents,
-        hasAny: h > 0 || r > 0 || materialsCents > 0,
-      };
-    }, [hours, rate, materials, markupPct, materialsItemized, materialsLines]);
+    const result = computeQuote({
+      laborCents,
+      materialsCents,
+      marginPct: marginEntered,
+    });
+
+    return {
+      laborCents,
+      materialsCents,
+      subtotalCents: result.subtotalCents,
+      profitCents: result.profitCents,
+      totalCents: result.customerTotalCents,
+      marginPctApplied: result.marginPctApplied,
+      equivalentMarkupPct: result.equivalentMarkupPct,
+      marginEntered,
+      hasAny: h > 0 || r > 0 || materialsCents > 0,
+    };
+  }, [hours, rate, materials, marginPct, materialsItemized, materialsLines]);
 
   function clearAll() {
     setHours("");
     setRate("");
     setMaterials("");
-    setMarkupPct("");
+    setMarginPct("");
     setCustomerName("");
     setScope("");
     setWatchingFor("");
@@ -108,8 +125,10 @@ export default function Calculator({ saveAction }: Props = {}) {
   }
 
   async function copyQuote() {
-    // Customer-facing output — markup is NEVER shown as a line item.
-    // Proportionally roll markup into each visible line.
+    // Customer-facing output — margin is NEVER shown as a line item.
+    // We compute a gross-up ratio (customerTotal / subtotal) and apply it
+    // to each visible line, so the customer sees clean labor + materials
+    // numbers that sum to the total.
     const subtotal = laborCents + materialsCents;
     const ratio = subtotal > 0 ? totalCents / subtotal : 1;
 
@@ -239,24 +258,35 @@ export default function Calculator({ saveAction }: Props = {}) {
         <div>
           <label
             className="label flex items-center justify-between gap-3"
-            htmlFor="markup"
+            htmlFor="margin"
           >
-            <span>Markup (%)</span>
+            <span>Profit margin (%) — what you keep</span>
             <span className="text-[10px] normal-case tracking-normal text-fog">
               Internal only — rolled silently into total
             </span>
           </label>
           <input
-            id="markup"
+            id="margin"
             className="input"
             type="number"
-            inputMode="decimal"
+            inputMode="numeric"
             min="0"
+            max={MARGIN_MAX}
             step="1"
-            placeholder="e.g. 15"
-            value={markupPct}
-            onChange={(e) => setMarkupPct(e.target.value)}
+            placeholder="e.g. 20"
+            value={marginPct}
+            onChange={(e) => setMarginPct(e.target.value)}
+            aria-describedby="margin-help"
           />
+          <p id="margin-help" className="mt-1 text-xs text-fog">
+            {marginExplainer({
+              hasAny,
+              marginEntered,
+              marginPctApplied,
+              equivalentMarkupPct,
+              profitCents,
+            })}
+          </p>
         </div>
 
         <div className="md:col-span-2">
@@ -332,31 +362,33 @@ export default function Calculator({ saveAction }: Props = {}) {
         <div className="space-y-2 text-sm">
           <Row label="Labor" cents={laborCents} />
           <Row label="Materials" cents={materialsCents} />
-          {markupCents > 0 && (
-            <Row
-              label={`Markup (${markupPct}%) — hidden from customer`}
-              cents={markupCents}
-            />
-          )}
+          <div className="flex items-baseline justify-between border-t border-white/5 pt-2 font-semibold">
+            <span className="text-fog">Your costs</span>
+            <span className="font-mono">
+              {subtotalCents === 0 ? "—" : formatUSD(subtotalCents)}
+            </span>
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-fog">Profit</span>
+            <span
+              className={`font-mono ${
+                profitCents > 0 ? "text-moss" : "text-fog"
+              }`}
+            >
+              {profitCents === 0 ? "—" : formatUSD(profitCents)}
+            </span>
+          </div>
         </div>
         <div className="mt-4 flex items-baseline justify-between border-t border-white/10 pt-4">
           <span className="text-sm uppercase tracking-wider text-fog">
-            Quoted total
+            Customer sees
           </span>
           <span className="font-mono text-3xl font-bold text-safety">
             {hasAny ? formatUSD(totalCents) : "—"}
           </span>
         </div>
-        <div className="mt-3 flex items-baseline justify-between border-t border-white/10 pt-3">
-          <span className="text-sm uppercase tracking-wider text-fog">
-            Customer sees
-          </span>
-          <span className="font-mono text-2xl text-chalk">
-            {hasAny ? formatUSD(totalCents) : "—"}
-          </span>
-        </div>
         <div className="mt-1 text-[11px] text-fog">
-          Markup is rolled silently into the total. Breakdown above is yours
+          Margin is rolled silently into the total. Breakdown above is yours
           only.
         </div>
       </div>
@@ -379,7 +411,7 @@ export default function Calculator({ saveAction }: Props = {}) {
             <input type="hidden" name="hours" value={hours} />
             <input type="hidden" name="rate" value={rate} />
             <input type="hidden" name="materials" value={materials} />
-            <input type="hidden" name="markupPct" value={markupPct} />
+            <input type="hidden" name="marginPct" value={marginPct} />
             <input type="hidden" name="customerName" value={customerName} />
             <input type="hidden" name="scope" value={scope} />
             <input type="hidden" name="watchingFor" value={watchingFor} />
@@ -406,9 +438,9 @@ export default function Calculator({ saveAction }: Props = {}) {
       </div>
 
       <p className="mt-4 text-xs text-fog">
-        &ldquo;Copy quote&rdquo; produces a customer-facing version with markup
-        baked silently into the total. Your internal breakdown above stays
-        here.
+        &ldquo;Copy quote&rdquo; produces a customer-facing version with your
+        margin baked silently into the total. Your internal breakdown above
+        stays here.
       </p>
 
       {/* Promoted save CTA — landing page only, shown once the calc has values */}
@@ -444,6 +476,57 @@ function Row({ label, cents }: { label: string; cents: number }) {
       <span className="text-fog">{label}</span>
       <span className="font-mono">{cents === 0 ? "—" : formatUSD(cents)}</span>
     </div>
+  );
+}
+
+/**
+ * Static helper line under the margin input. Three states:
+ *   1. No costs entered yet → show what the field is for
+ *   2. Margin > 80 (clamped) → "Capped at 80% — anything higher is almost certainly a typo"
+ *   3. Normal → "X% margin = Y% markup on costs · You keep $Z on this quote"
+ *      with a "working for free" warning at 0%
+ */
+function marginExplainer({
+  hasAny,
+  marginEntered,
+  marginPctApplied,
+  equivalentMarkupPct,
+  profitCents,
+}: {
+  hasAny: boolean;
+  marginEntered: number;
+  marginPctApplied: number;
+  equivalentMarkupPct: number;
+  profitCents: number;
+}): React.ReactNode {
+  if (!hasAny) {
+    return (
+      <>What you keep as a % of customer total. Cap {MARGIN_MAX}%.</>
+    );
+  }
+  if (marginEntered > MARGIN_MAX) {
+    return (
+      <span className="text-rust">
+        Capped at {MARGIN_MAX}% — anything higher is almost certainly a typo.
+      </span>
+    );
+  }
+  if (marginPctApplied === 0) {
+    return (
+      <>
+        0% margin = 0% markup on costs ·{" "}
+        <span className="font-mono text-chalk">$0</span> kept ·{" "}
+        <span className="text-rust">⚠ You&rsquo;re working for free</span>
+      </>
+    );
+  }
+  return (
+    <>
+      {marginPctApplied}% margin = {equivalentMarkupPct.toFixed(1)}% markup on
+      costs · You keep{" "}
+      <span className="font-mono text-chalk">{formatUSD(profitCents)}</span> on
+      this quote
+    </>
   );
 }
 

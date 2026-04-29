@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import Calculator from "@/components/Calculator";
 import { toCents } from "@/lib/utils/money";
 import { parseQuoteLines } from "@/lib/materials";
+import { computeQuote } from "@/lib/pricing";
 
 async function saveQuote(formData: FormData) {
   "use server";
@@ -16,7 +17,7 @@ async function saveQuote(formData: FormData) {
   const hours = parseFloat(formData.get("hours") as string) || 0;
   const rate = parseFloat(formData.get("rate") as string) || 0;
   const materials = parseFloat(formData.get("materials") as string) || 0;
-  const markupPct = parseFloat(formData.get("markupPct") as string) || 0;
+  const marginPctRaw = parseFloat(formData.get("marginPct") as string) || 0;
   const customerName =
     ((formData.get("customerName") as string) || "").trim() || null;
   const scope = ((formData.get("scope") as string) || "").trim() || null;
@@ -33,9 +34,14 @@ async function saveQuote(formData: FormData) {
   const materialsCents = materialsItemized
     ? materialsLines.reduce((s, l) => s + l.cost_cents, 0)
     : toCents(materials);
-  const subtotal = laborCents + materialsCents;
-  const markupCents = Math.round(subtotal * (markupPct / 100));
-  const totalCents = subtotal + markupCents;
+
+  // Single source of truth — server runs the same math the client previewed.
+  // computeQuote clamps margin to 0..80 and handles zero subtotal cleanly.
+  const priced = computeQuote({
+    laborCents,
+    materialsCents,
+    marginPct: marginPctRaw,
+  });
 
   await supabase.from("quotes").insert({
     user_id: user.id,
@@ -45,7 +51,11 @@ async function saveQuote(formData: FormData) {
     quoted_hours: hours,
     quoted_materials_cents: materialsCents,
     hourly_rate_cents: toCents(rate),
-    quoted_total_cents: totalCents,
+    quoted_total_cents: priced.customerTotalCents,
+    margin_pct: priced.marginPctApplied,
+    subtotal_cents: priced.subtotalCents,
+    customer_total_cents: priced.customerTotalCents,
+    profit_cents: priced.profitCents,
     materials_itemized: materialsItemized,
     materials_lines: materialsLines,
   });

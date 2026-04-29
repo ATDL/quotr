@@ -102,6 +102,9 @@ export default async function EditCloseOutPage({
         computed_variance_pct: parseFloat(variancePct.toFixed(2)),
         actual_materials_itemized: actualItemized,
         actual_materials_lines: actualLines,
+        actual_subtotal_cents: actualTotalCents,
+        actual_profit_cents: profitCents,
+        actual_margin_pct: parseFloat(profitPct.toFixed(2)),
       })
       .eq("quote_id", quoteId)
       .eq("user_id", user.id);

@@ -98,10 +98,11 @@ export function sumLines(
 }
 
 /**
- * Per-line customer-facing cost with markup rolled in proportionally.
+ * Per-line customer-facing cost with the quote's margin distributed
+ * proportionally — multiplies by the gross-up ratio (customerTotal / subtotal).
  * Round after multiplication; accept small drift vs. total per spec.
  */
-export function applyMarkupRatio(cents: number, ratio: number): number {
+export function applyGrossUpRatio(cents: number, ratio: number): number {
   return Math.round(cents * ratio);
 }
 

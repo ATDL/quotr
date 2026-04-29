@@ -127,6 +127,10 @@ export default async function CloseOutPage({
       credits_spent: 1,
       actual_materials_itemized: actualItemized,
       actual_materials_lines: actualLines,
+      // Margin-rename: explicit names alongside the computed_* aliases.
+      actual_subtotal_cents: actualTotalCents,
+      actual_profit_cents: profitCents,
+      actual_margin_pct: parseFloat(profitPct.toFixed(2)),
     });
 
     if (error) throw new Error(error.message);

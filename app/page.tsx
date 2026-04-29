@@ -162,12 +162,12 @@ function CloseOutMock() {
         <span>$1,520</span>
       </div>
       <div className="flex justify-between">
-        <span className="text-fog">Actual</span>
+        <span className="text-fog">Actual cost</span>
         <span>$1,306</span>
       </div>
       <div className="flex justify-between">
-        <span className="text-fog">Profit</span>
-        <span className="text-moss">+$214 · 14%</span>
+        <span className="text-fog">You kept</span>
+        <span className="text-moss">$214 · 14% margin</span>
       </div>
       <div className="mt-2 border-t border-white/10 pt-2 text-[11px] italic text-fog">
         &ldquo;Driveway was 40 ft longer than I measured.&rdquo;
@@ -300,6 +300,10 @@ function FAQ() {
     {
       q: "Is this a subscription I have to cancel?",
       a: "No. There is nothing to cancel. One-time pack purchase, credits never expire.",
+    },
+    {
+      q: "Margin or markup — which one does Quotr use?",
+      a: "Margin. It’s the percent you actually keep, which is the number that pays your mortgage. We show the markup equivalent next to the input so you can sanity-check against how you’re used to thinking about it. ($60 cost sold for $100 = 40% margin = 67% markup. Same dollars; very different sentence.)",
     },
     {
       q: "What do I get with a close-out?",

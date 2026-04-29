@@ -408,6 +408,84 @@ from public.close_outs co
 join public.quotes q on q.id = co.quote_id;
 
 -- ============================================================================
+-- Migration: margin-not-markup
+-- ============================================================================
+-- The calculator now accepts a margin % (what you keep as a % of revenue),
+-- not a markup % (profit-on-cost). Persist the inputs AND the computed
+-- values so the dashboard / reveal screen are cheap to render and immune
+-- to formula drift.
+--
+-- New on quotes:
+--   margin_pct            — user input, 0..80
+--   subtotal_cents        — labor + materials at quote time
+--   customer_total_cents  — what the customer sees (= old quoted_total_cents)
+--   profit_cents          — customer_total - subtotal
+--
+-- New on close_outs:
+--   actual_subtotal_cents — actual labor + actual materials
+--   actual_profit_cents   — quoted_total - actual_subtotal (what you actually kept)
+--   actual_margin_pct     — actual_profit / quoted_total
+--
+-- For close_outs, the existing computed_profit_cents and computed_profit_pct
+-- carry the same values; the new columns are kept for explicit naming so
+-- future readers don't conflate "margin" with "markup".
+--
+-- This block is idempotent. Backfill UPDATEs only run on rows still at the
+-- default values, so re-running won't overwrite live data.
+-- ============================================================================
+alter table public.quotes
+  add column if not exists margin_pct numeric(5,2) not null default 20.00,
+  add column if not exists subtotal_cents integer not null default 0,
+  add column if not exists customer_total_cents integer not null default 0,
+  add column if not exists profit_cents integer not null default 0;
+
+alter table public.close_outs
+  add column if not exists actual_subtotal_cents integer,
+  add column if not exists actual_profit_cents integer,
+  add column if not exists actual_margin_pct numeric(5,2);
+
+-- Backfill existing quotes from the input fields. customer_total_cents is
+-- already the truth (= quoted_total_cents); subtotal/profit/margin derive
+-- from it.
+update public.quotes
+set
+  subtotal_cents = (quoted_hours * hourly_rate_cents)::integer + quoted_materials_cents,
+  customer_total_cents = quoted_total_cents,
+  profit_cents = quoted_total_cents
+                 - ((quoted_hours * hourly_rate_cents)::integer + quoted_materials_cents),
+  margin_pct = case
+    when quoted_total_cents > 0 then
+      round(
+        ((quoted_total_cents
+          - ((quoted_hours * hourly_rate_cents)::integer + quoted_materials_cents))::numeric
+         / quoted_total_cents) * 100,
+        2
+      )
+    else 0
+  end
+where customer_total_cents = 0;
+
+-- Backfill close_outs from the existing actual_* + parent quote.
+update public.close_outs co
+set
+  actual_subtotal_cents = co.actual_materials_cents
+    + (co.actual_hours * (
+        select hourly_rate_cents from public.quotes q where q.id = co.quote_id
+      ))::integer
+where actual_subtotal_cents is null;
+
+update public.close_outs co
+set
+  actual_profit_cents = co.computed_profit_cents,
+  actual_margin_pct = co.computed_profit_pct
+where actual_profit_cents is null;
+
+comment on column public.quotes.margin_pct is
+  'Profit margin % the user entered. Capped 0..80 in app code.';
+comment on column public.quotes.subtotal_cents is
+  'Cost-only subtotal (labor + materials) at quote time. customer_total = subtotal / (1 - margin/100).';
+
+-- ============================================================================
 -- Hard-purge cron (wire up via Vercel Cron when ready):
 --
 --   delete from public.quotes
