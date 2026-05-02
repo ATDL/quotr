@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { normalizeSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
@@ -38,6 +39,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="min-h-screen bg-ink text-chalk font-sans">
         {children}
+        <SpeedInsights />
       </body>
     </html>
   );
