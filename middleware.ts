@@ -5,12 +5,13 @@ import { createClient } from "@supabase/supabase-js";
 const BOT_RE =
   /bot|crawler|spider|crawling|googlebot|bingbot|yandexbot|facebookexternalhit|slack|discord|whatsapp|telegram/i;
 
-let cachedExp: { id: string; split_a: number } | null = null;
-let cacheAt = 0;
+type CachedExp = { exp: { id: string; split_a: number } | null; at: number };
+const expCache = new Map<string, CachedExp>();
 const CACHE_TTL_MS = 60_000;
 
-async function getActiveExperiment() {
-  if (cachedExp && Date.now() - cacheAt < CACHE_TTL_MS) return cachedExp;
+async function getActiveExperiment(host: string) {
+  const cached = expCache.get(host);
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.exp;
   const supa = createClient(
     process.env.DARTLAB_SUPABASE_URL!,
     process.env.DARTLAB_SECRET_KEY!,
@@ -19,24 +20,25 @@ async function getActiveExperiment() {
   const { data } = await supa
     .from("experiments")
     .select("id, split_a")
-    .eq("host", "quotr.vercel.app")
+    .eq("host", host)
     .eq("entry_path", "/")
     .eq("status", "running")
     .limit(1)
     .maybeSingle();
-  cachedExp = data ?? null;
-  cacheAt = Date.now();
-  return cachedExp;
+  const exp = data ?? null;
+  expCache.set(host, { exp, at: Date.now() });
+  return exp;
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const ua = request.headers.get("user-agent") || "";
+  const host = request.headers.get("host") || "";
 
-  // DartLab: only run on the landing page root, skip bots.
-  if (pathname === "/" && !BOT_RE.test(ua)) {
+  // DartLab: only run on the landing page root, skip bots, require host.
+  if (pathname === "/" && host && !BOT_RE.test(ua)) {
     try {
-      const exp = await getActiveExperiment();
+      const exp = await getActiveExperiment(host);
       if (exp) {
         const variantCookieName = `dart_variant_${exp.id}`;
         let variant = request.cookies.get(variantCookieName)?.value;

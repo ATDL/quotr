@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(
     normalizeSiteUrl(
       process.env.NEXT_PUBLIC_SITE_URL,
-      "https://quotr.vercel.app"
+      "https://quotr-8r2q.vercel.app"
     )
   ),
   title: "Quotr — free quote calculator for contractors with profit tracking",
