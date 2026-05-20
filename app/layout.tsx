@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import Script from "next/script";
 import { normalizeSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
@@ -37,9 +36,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        {/*
+          DartLab hosted SDK. MUST be synchronous and in <head> so variant
+          assignment + redirect happens before paint. Loads from DartLab's
+          domain; no async/defer.
+        */}
+        <script src="https://dartlab.vercel.app/sdk/dk_quotr_001.js"></script>
+      </head>
       <body className="min-h-screen bg-ink text-chalk font-sans">
         {children}
-        <Script src="/dartlab.js" strategy="afterInteractive" />
       </body>
     </html>
   );

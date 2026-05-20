@@ -50,11 +50,12 @@ function Header() {
 }
 
 function Hero() {
+  // Reads the first DartLab variant cookie (dl_v_<8-char-prefix>) set
+  // by the hosted SDK loaded in app/layout.tsx. Default A on first visit
+  // (cookie not yet present from the SDK's client-side write).
   const cookieStore = cookies();
-  const expId = cookieStore.get("dart_active_exp")?.value;
-  const variant = expId
-    ? (cookieStore.get(`dart_variant_${expId}`)?.value ?? "a")
-    : "a";
+  const variant =
+    cookieStore.getAll().find((c) => c.name.startsWith("dl_v_"))?.value ?? "a";
 
   const headline =
     variant === "b"
