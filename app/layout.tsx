@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { normalizeSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
@@ -38,6 +39,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="min-h-screen bg-ink text-chalk font-sans">
         {children}
+        <Script src="/dartlab.js" strategy="afterInteractive" />
       </body>
     </html>
   );

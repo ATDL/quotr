@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import Calculator from "@/components/Calculator";
 
 export default function LandingPage() {
@@ -49,12 +50,23 @@ function Header() {
 }
 
 function Hero() {
+  const cookieStore = cookies();
+  const expId = cookieStore.get("dart_active_exp")?.value;
+  const variant = expId
+    ? (cookieStore.get(`dart_variant_${expId}`)?.value ?? "a")
+    : "a";
+
+  const headline =
+    variant === "b"
+      ? { line1: "Stop guessing.", line2: "See the profit on every job." }
+      : { line1: "You quote by gut.", line2: "You never find out if you were right." };
+
   return (
     <section>
       <h1 className="text-4xl font-extrabold leading-tight tracking-tight md:text-5xl">
-        You quote by gut.
+        {headline.line1}
         <br />
-        <span className="text-safety">You never find out if you were right.</span>
+        <span className="text-safety">{headline.line2}</span>
       </h1>
       <p className="mt-5 max-w-2xl text-lg text-fog">
         Free calculator for your next quote. Close the job out when it&rsquo;s done and
