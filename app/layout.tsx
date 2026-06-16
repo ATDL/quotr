@@ -42,7 +42,7 @@ export default function RootLayout({
           assignment + redirect happens before paint. Loads from DartLab's
           domain; no async/defer.
         */}
-        <script src="https://dartlab.vercel.app/sdk/dk_quotr_001.js"></script>
+        <script src="https://dartlab-dashboard.vercel.app/sdk/dk_quotr_001.js"></script>
       </head>
       <body className="min-h-screen bg-ink text-chalk font-sans">
         {children}
